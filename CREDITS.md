@@ -1,5 +1,12 @@
 # Credits
 
+## Developer
+
+Chess Arena is designed and developed by **Orville Arrindell** (CodeGorilla) —
+[github.com/OCode3546](https://github.com/OCode3546).
+
+## Assets and libraries
+
 | Asset                         | Author                            | License                                             | Source                                                                |
 | ----------------------------- | --------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- |
 | "Modern" piece set (cburnett) | Colin M.L. Burnett                | GPLv2+ (`LICENSES/GPL-2.0.txt`)                     | https://github.com/lichess-org/lila/tree/master/public/piece/cburnett |
@@ -8,8 +15,7 @@
 | chess.js                      | Jeff Hlywa                        | BSD-2-Clause (`LICENSES/chess.js-BSD-2-Clause.txt`) | https://github.com/jhlywa/chess.js                                    |
 | Inter                         | The Inter Project Authors         | SIL OFL 1.1 (`LICENSES/Inter-OFL-1.1.txt`)          | https://github.com/rsms/inter                                         |
 | Space Grotesk                 | The Space Grotesk Project Authors | SIL OFL 1.1 (`LICENSES/SpaceGrotesk-OFL-1.1.txt`)   | https://github.com/floriankarsten/space-grotesk                       |
-| Sound effects                 | Chess Arena                       | Part of the app                                     | Synthesised at runtime with Web Audio (`src/audio/sfx.ts`)            |
-| Developer                  | Orville Arrindell                      | CodeGorilla                                   | https://github.com/OCode3546
+| Sound effects                 | Orville Arrindell                 | Part of the app                                     | Synthesised at runtime with Web Audio (`src/audio/sfx.ts`)            |
 
 ## Chess engine
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Card, CardTitle, Modal } from '@/components/ui';
 import { CHANGELOG } from '@/config/changelog';
-import { LINKS, PROJECT_LINKS } from '@shared/links';
+import { DEVELOPER, LINKS, PROJECT_LINKS } from '@shared/links';
 import type { LicenseId } from '@shared/types';
 
 const link = 'text-accent-text underline-offset-2 hover:underline';
@@ -16,6 +16,12 @@ interface Credit {
 }
 
 const CREDITS: Credit[] = [
+  {
+    name: 'Chess Arena (design & development)',
+    author: DEVELOPER.name,
+    license: 'Original work',
+    source: DEVELOPER.github,
+  },
   {
     name: 'Stockfish 19 (chess engine)',
     author: 'The Stockfish developers',
@@ -67,7 +73,7 @@ const CREDITS: Credit[] = [
   },
   {
     name: 'Sound effects',
-    author: 'Synthesised by Chess Arena at runtime',
+    author: `${DEVELOPER.name} (synthesised at runtime)`,
     license: 'Part of the app',
   },
 ];
@@ -122,6 +128,14 @@ export function AboutScreen() {
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="text-muted">Version</dt>
             <dd data-version>{version}</dd>
+            <dt className="text-muted">Developer</dt>
+            <dd data-developer>{DEVELOPER.name}</dd>
+            <dt className="text-muted">GitHub</dt>
+            <dd>
+              <External href={DEVELOPER.github}>
+                {DEVELOPER.github.replace('https://', '')}
+              </External>
+            </dd>
             {PROJECT_LINKS.website && (
               <>
                 <dt className="text-muted">Website</dt>

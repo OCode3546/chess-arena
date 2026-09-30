@@ -16,6 +16,12 @@ export const PROJECT_LINKS = {
   support: '',
 };
 
+/** The developer credited in About. */
+export const DEVELOPER = {
+  name: 'Orville Arrindell',
+  github: 'https://github.com/OCode3546',
+} as const;
+
 const ALLOWED = [
   'https://stockfishchess.org/',
   'https://github.com/official-stockfish/',
@@ -24,6 +30,7 @@ const ALLOWED = [
   LINKS.chessJs,
   LINKS.inter,
   LINKS.spaceGrotesk,
+  DEVELOPER.github,
   ...Object.values(PROJECT_LINKS).filter(Boolean),
 ];
 

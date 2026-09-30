@@ -2,7 +2,7 @@
 # Run `node scripts/fetch-engine.mjs win32 x64` first (done by `npm run dist:win`).
 appId: com.chessarena.app
 productName: Chess Arena
-copyright: Copyright © 2026 Chess Arena
+copyright: Copyright © 2026 Orville Arrindell
 directories:
   buildResources: build
   output: release/${version}

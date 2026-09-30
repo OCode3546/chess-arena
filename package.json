@@ -3,7 +3,7 @@
   "productName": "Chess Arena",
   "version": "0.7.0",
   "description": "A modern 2D chess game for Windows — play locally or against the computer.",
-  "author": "Chess Arena",
+  "author": "Orville Arrindell (https://github.com/OCode3546)",
   "private": true,
   "main": "out/main/main.js",
   "scripts": {
