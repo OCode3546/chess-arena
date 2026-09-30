@@ -200,6 +200,11 @@ export function sanitizeProfile(v: unknown): Profile | null {
   };
 }
 
+/** The same profile (id, name, avatar) back at level 1 with no XP, stats, achievements or equips. */
+export function resetProfileProgress(p: Profile): Profile {
+  return sanitizeProfile({ id: p.id, name: p.name, avatarId: p.avatarId, createdAt: p.createdAt })!;
+}
+
 /** Keep valid, uniquely-identified profiles; the active id falls back to the first profile. */
 export function sanitizeProfilesDoc(v: unknown): ProfilesDoc {
   const list = isObj(v) && Array.isArray(v.profiles) ? v.profiles : [];

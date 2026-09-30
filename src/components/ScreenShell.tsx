@@ -38,14 +38,3 @@ export function ScreenShell({ id, title, subtitle, children, actions }: ScreenSh
     </motion.section>
   );
 }
-
-export function ComingSoon({ phase, children }: { phase: string; children?: ReactNode }) {
-  return (
-    <div className="glass flex flex-col items-center justify-center gap-2 rounded-2xl px-6 py-16 text-center">
-      <div className="font-display text-lg font-bold">Coming soon</div>
-      <p className="max-w-md text-sm text-muted">
-        {children ?? `This screen arrives in ${phase}.`}
-      </p>
-    </div>
-  );
-}

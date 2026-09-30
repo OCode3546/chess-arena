@@ -13,6 +13,8 @@ const api: ChessArenaApi = {
     getVersion: () => ipcRenderer.invoke(IPC.appVersion),
     quit: () => ipcRenderer.send(IPC.appQuit),
     getStartupIssues: () => ipcRenderer.invoke(IPC.appStartupIssues),
+    openDataFolder: () => ipcRenderer.send(IPC.appOpenDataFolder),
+    getLicense: (id) => ipcRenderer.invoke(IPC.appLicense, id),
   },
   window: {
     minimize: () => ipcRenderer.send(IPC.winMinimize),
@@ -34,6 +36,12 @@ const api: ChessArenaApi = {
     setProfiles: (doc) => ipcRenderer.invoke(IPC.profilesSet, doc),
     getHistory: () => ipcRenderer.invoke(IPC.historyGet),
     addGameRecord: (record) => ipcRenderer.invoke(IPC.historyAdd, record),
+    resetProgress: () => ipcRenderer.invoke(IPC.resetProgress),
+  },
+  dialog: {
+    exportPgn: (gameId) => ipcRenderer.invoke(IPC.dialogExportPgn, gameId),
+    exportData: () => ipcRenderer.invoke(IPC.dialogExportData),
+    importData: () => ipcRenderer.invoke(IPC.dialogImportData),
   },
   engine: {
     start: () => ipcRenderer.invoke(IPC.engineStart),

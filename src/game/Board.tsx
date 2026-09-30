@@ -1,4 +1,4 @@
-import { Chess, type Square } from 'chess.js';
+import { Chess, type Move, type Square } from 'chess.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   memo,
@@ -21,6 +21,7 @@ import { BoardEffects } from './BoardEffects';
 import { displayPos, isLightSquare, squareAt } from './boardGeometry';
 import { trackPieces, type TrackedPiece } from './pieceIds';
 import { PromotionPicker } from './PromotionPicker';
+import { START_FEN } from './rules';
 
 interface DragState {
   id: string;
@@ -101,7 +102,23 @@ const PieceView = memo(function PieceView({
   );
 });
 
-export function Board({ interactive = true }: { interactive?: boolean }) {
+/** A finished game shown read-only (history review) instead of the live game. */
+export interface ReviewSource {
+  history: Move[];
+  /** Ply shown; null = the final position. */
+  ply: number | null;
+  orientation: Color;
+}
+
+const NO_SQUARES: Square[] = [];
+
+export function Board({
+  interactive = true,
+  review,
+}: {
+  interactive?: boolean;
+  review?: ReviewSource;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<PointerTrack | null>(null);
@@ -110,15 +127,23 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
   const [cursor, setCursor] = useState<Square>('e2');
   const [focused, setFocused] = useState(false);
 
-  const fen = useGameStore((s) => s.fen);
-  const history = useGameStore((s) => s.history);
-  const orientation = useGameStore((s) => s.orientation);
-  const selected = useGameStore((s) => s.selected);
-  const legalTargets = useGameStore((s) => s.legalTargets);
-  const viewPly = useGameStore((s) => s.viewPly);
+  // In review the position comes from the props; the live game is ignored.
+  const liveFen = useGameStore((s) => s.fen);
+  const liveHistory = useGameStore((s) => s.history);
+  const liveOrientation = useGameStore((s) => s.orientation);
+  const liveSelected = useGameStore((s) => s.selected);
+  const liveTargets = useGameStore((s) => s.legalTargets);
+  const liveViewPly = useGameStore((s) => s.viewPly);
+  const liveHint = useGameStore((s) => s.hint);
+  const history = review ? review.history : liveHistory;
+  const fen = review ? (review.history.at(-1)?.after ?? START_FEN) : liveFen;
+  const orientation = review ? review.orientation : liveOrientation;
+  const selected = review ? null : liveSelected;
+  const legalTargets = review ? NO_SQUARES : liveTargets;
+  const viewPly = review ? review.ply : liveViewPly;
+  const hint = review ? null : liveHint;
   const status = useGameStore((s) => s.status);
   const paused = useGameStore((s) => s.paused);
-  const hint = useGameStore((s) => s.hint);
   const aiTurn = useGameStore(
     (s) => s.settings?.mode === 'pvai' && s.fen.split(' ')[1] !== s.settings.humanColor,
   );
@@ -155,7 +180,8 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
     return c.inCheck() ? c.findPiece({ type: 'k', color: c.turn() })[0] : undefined;
   }, [shownFen]);
 
-  const canMove = interactive && status === 'playing' && !paused && viewPly === null && !aiTurn;
+  const canMove =
+    interactive && !review && status === 'playing' && !paused && viewPly === null && !aiTurn;
   const squarePx = size / 8;
   const hl = settings.colorBlindHighlights ? HIGHLIGHT.colorBlind : HIGHLIGHT.normal;
   const theme = boardTheme(look.board);
@@ -264,6 +290,7 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (review) return;
     const { row, col } = displayPos(cursor, orientation);
     const move = (r: number, c: number) => {
       e.preventDefault();
@@ -383,10 +410,14 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
         role="application"
         data-board={look.board}
         data-piece-set={look.pieceSet}
-        aria-label={`Chess board, ${orientation === 'w' ? 'White' : 'Black'} at the bottom. Arrow keys move the cursor, Enter selects and moves. Cursor on ${cursor}${cursorPiece ? `, ${cursorPiece.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[cursorPiece.type]}` : ''}.`}
-        tabIndex={0}
+        aria-label={
+          review
+            ? `Game review board, ${orientation === 'w' ? 'White' : 'Black'} at the bottom.`
+            : `Chess board, ${orientation === 'w' ? 'White' : 'Black'} at the bottom. Arrow keys move the cursor, Enter selects and moves. Cursor on ${cursor}${cursorPiece ? `, ${cursorPiece.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[cursorPiece.type]}` : ''}.`
+        }
+        tabIndex={review ? -1 : 0}
         onKeyDown={onKeyDown}
-        onFocus={() => setFocused(true)}
+        onFocus={() => setFocused(!review)}
         onBlur={() => setFocused(false)}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -425,7 +456,7 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
           trail={settings.animations && look.effects.includes('move-trail')}
           particles={settings.animations && look.effects.includes('capture-particles')}
         />
-        <PromotionPicker color={turn} pieceSet={look.pieceSet} />
+        {!review && <PromotionPicker color={turn} pieceSet={look.pieceSet} />}
         <div className="sr-only" aria-live="polite">
           {ariaStatus}
         </div>

@@ -15,9 +15,11 @@ import {
   isGameRecord,
   isSavedGame,
   MAX_HISTORY,
+  resetProfileProgress,
   sanitizeProfilesDoc,
   sanitizeSettings,
 } from '@shared/validate';
+import type { BackupData } from './backup';
 import { SCHEMA_VERSION, storageMigrations } from './migrations';
 
 type Doc = Record<string, unknown>;
@@ -121,4 +123,27 @@ export function addGameRecord(record: unknown): boolean {
   const games = getHistory().filter((g) => g.id !== record.id);
   historyStore.set('games', [record, ...games].slice(0, MAX_HISTORY));
   return true;
+}
+
+export function getGameRecord(id: string): GameRecord | undefined {
+  return getHistory().find((g) => g.id === id);
+}
+
+export function getBackupData(): BackupData {
+  return { settings: getSettings(), profiles: getProfiles(), history: getHistory() };
+}
+
+/** Replace settings, profiles and history with already-validated imported data. */
+export function replaceAllData(data: BackupData): void {
+  settingsStore.set('settings', sanitizeSettings(data.settings));
+  setProfiles(data.profiles);
+  historyStore.set('games', data.history.filter(isGameRecord).slice(0, MAX_HISTORY));
+}
+
+export function resetProgress(): ProfilesDoc {
+  const doc = getProfiles();
+  const next = setProfiles({ ...doc, profiles: doc.profiles.map(resetProfileProgress) });
+  historyStore.set('games', []);
+  clearSavedGame();
+  return next;
 }

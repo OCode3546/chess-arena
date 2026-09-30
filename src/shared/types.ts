@@ -176,6 +176,21 @@ export interface WindowState {
   fullscreen: boolean;
 }
 
+/** Outcome of writing a file chosen in a native Save dialog. */
+export type SaveFileResult =
+  | { status: 'saved'; fileName: string }
+  | { status: 'canceled' }
+  | { status: 'error'; message: string };
+
+export type ImportResult =
+  | { status: 'imported'; profiles: number; games: number }
+  | { status: 'canceled' }
+  | { status: 'error'; message: string };
+
+/** License texts bundled in `LICENSES/` that the About screen can show. */
+export const LICENSE_IDS = ['stockfish', 'gpl-2', 'chess-js', 'inter', 'space-grotesk'] as const;
+export type LicenseId = (typeof LICENSE_IDS)[number];
+
 /** The complete API the preload script exposes on `window.chessArena`. */
 export interface ChessArenaApi {
   app: {
@@ -183,6 +198,9 @@ export interface ChessArenaApi {
     quit(): void;
     /** Storage files that were unreadable at startup and were reset. */
     getStartupIssues(): Promise<string[]>;
+    /** Show the user-data folder in the system file manager. */
+    openDataFolder(): void;
+    getLicense(id: LicenseId): Promise<string>;
   };
   window: {
     minimize(): void;
@@ -207,6 +225,20 @@ export interface ChessArenaApi {
     /** Finished games, newest first. */
     getHistory(): Promise<GameRecord[]>;
     addGameRecord(record: GameRecord): Promise<boolean>;
+    /**
+     * Put every profile back to level 1 (names and avatars stay) and delete the game
+     * history and the saved game. Returns the profiles as stored.
+     */
+    resetProgress(): Promise<ProfilesDoc>;
+  };
+  /** Native file dialogs. The main process picks and writes the files; no paths cross IPC. */
+  dialog: {
+    /** Save a finished game from the history as a .pgn file. */
+    exportPgn(gameId: string): Promise<SaveFileResult>;
+    /** Save profiles, history and settings as a backup file. */
+    exportData(): Promise<SaveFileResult>;
+    /** Replace profiles, history and settings with a backup file's. */
+    importData(): Promise<ImportResult>;
   };
   engine: {
     /** Start (or report on) the native engine. */

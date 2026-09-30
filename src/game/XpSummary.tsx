@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { playSound } from '@/audio/sfx';
 import { LevelBadge } from '@/components/Avatar';
 import { achievementById } from '@/config/achievements';
 import { rewardKey, rewardsAt } from '@/config/rewards';
@@ -224,7 +225,10 @@ export function XpSummary({ awards }: { awards: PlayerAward[] }) {
             a={a}
             animate={!reduced}
             showName={awards.length > 1}
-            onLevelUp={(level) => setBurst({ level, key: Date.now() })}
+            onLevelUp={(level) => {
+              setBurst({ level, key: Date.now() });
+              playSound('levelUp');
+            }}
           />
         ))}
       </div>

@@ -1,12 +1,20 @@
+import type { Move } from 'chess.js';
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui';
 import { useGameStore } from '@/store/gameStore';
 import { cx } from '@/utils/format';
 
-export function MoveList({ className }: { className?: string }) {
-  const history = useGameStore((s) => s.history);
-  const viewPly = useGameStore((s) => s.viewPly);
-  const setViewPly = useGameStore((s) => s.setViewPly);
+interface MoveListViewProps {
+  history: Pick<Move, 'san'>[];
+  /** Ply shown on the board; null = the latest position. */
+  viewPly: number | null;
+  /** Show a ply; `null` or a ply past the end means the latest position. */
+  onSelect: (ply: number | null) => void;
+  className?: string;
+}
+
+/** Numbered SAN move list with first / previous / next / latest controls. */
+export function MoveListView({ history, viewPly, onSelect, className }: MoveListViewProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
   const current = viewPly ?? history.length;
 
@@ -32,7 +40,7 @@ export function MoveList({ className }: { className?: string }) {
               key={idx}
               ref={active ? activeRef : undefined}
               type="button"
-              onClick={() => setViewPly(ply)}
+              onClick={() => onSelect(ply)}
               aria-current={active ? 'step' : undefined}
               className={cx(
                 'cursor-pointer rounded-md px-2 py-1 text-left font-mono text-sm transition-colors',
@@ -60,7 +68,7 @@ export function MoveList({ className }: { className?: string }) {
           size="sm"
           variant="ghost"
           aria-label="First position"
-          onClick={() => setViewPly(0)}
+          onClick={() => onSelect(0)}
           disabled={current === 0}
         >
           ⏮
@@ -69,7 +77,7 @@ export function MoveList({ className }: { className?: string }) {
           size="sm"
           variant="ghost"
           aria-label="Previous move"
-          onClick={() => setViewPly(current - 1)}
+          onClick={() => onSelect(current - 1)}
           disabled={current === 0}
         >
           ◀
@@ -78,7 +86,7 @@ export function MoveList({ className }: { className?: string }) {
           size="sm"
           variant="ghost"
           aria-label="Next move"
-          onClick={() => setViewPly(current + 1)}
+          onClick={() => onSelect(current + 1)}
           disabled={viewPly === null}
         >
           ▶
@@ -87,12 +95,22 @@ export function MoveList({ className }: { className?: string }) {
           size="sm"
           variant="ghost"
           aria-label="Latest position"
-          onClick={() => setViewPly(null)}
+          onClick={() => onSelect(null)}
           disabled={viewPly === null}
         >
           ⏭
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Move list of the live game. */
+export function MoveList({ className }: { className?: string }) {
+  const history = useGameStore((s) => s.history);
+  const viewPly = useGameStore((s) => s.viewPly);
+  const setViewPly = useGameStore((s) => s.setViewPly);
+  return (
+    <MoveListView history={history} viewPly={viewPly} onSelect={setViewPly} className={className} />
   );
 }

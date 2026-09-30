@@ -2,17 +2,20 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { aiEngine } from '@/ai/engine';
+import { wireSounds } from '@/audio/sfx';
 import { Button, Modal, ToastHost } from '@/components/ui';
 import { achievementById } from '@/config/achievements';
 import { AboutScreen } from '@/screens/AboutScreen';
 import { GameScreen } from '@/screens/GameScreen';
+import { HistoryScreen } from '@/screens/HistoryScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
-import { HistoryScreen, TutorialScreen } from '@/screens/Placeholders';
 import { ProfileScreen } from '@/screens/ProfileScreen';
+import { ReviewScreen } from '@/screens/ReviewScreen';
 import { RewardsScreen } from '@/screens/RewardsScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { SetupScreen } from '@/screens/SetupScreen';
 import { SplashScreen } from '@/screens/SplashScreen';
+import { TutorialScreen } from '@/screens/TutorialScreen';
 import { useGameStore } from '@/store/gameStore';
 import { useProfiles, wireProgression } from '@/store/profileStore';
 import { loadProfiles, useSession, wireGamePersistence } from '@/store/sessionStore';
@@ -40,6 +43,7 @@ export function App() {
   useEffect(() => {
     wireGamePersistence();
     const offProgression = wireProgression();
+    const offSounds = wireSounds();
     const offAchievements = useProfiles.subscribe((s, prev) => {
       if (!s.lastMatch || s.lastMatch === prev.lastMatch) return;
       const several = s.lastMatch.awards.length > 1;
@@ -85,6 +89,7 @@ export function App() {
     return () => {
       offBackend();
       offProgression();
+      offSounds();
       offAchievements();
     };
   }, []);
@@ -139,6 +144,7 @@ export function App() {
                     <Route path="/profile" element={<ProfileScreen />} />
                     <Route path="/rewards" element={<RewardsScreen />} />
                     <Route path="/history" element={<HistoryScreen />} />
+                    <Route path="/history/:id" element={<ReviewScreen />} />
                     <Route path="/settings" element={<SettingsScreen />} />
                     <Route path="/tutorial" element={<TutorialScreen />} />
                     <Route path="/about" element={<AboutScreen />} />

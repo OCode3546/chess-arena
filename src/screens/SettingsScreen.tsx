@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useWindowState } from '@/app/useWindowState';
+import { playSound } from '@/audio/sfx';
 import { BoardSwatch, LockIcon, PieceSetPreview } from '@/components/Cosmetics';
 import { ScreenShell } from '@/components/ScreenShell';
-import { Card, CardTitle, Tabs, Toggle } from '@/components/ui';
+import { Button, Card, CardTitle, Modal, Tabs, Toggle } from '@/components/ui';
 import { ACCENTS, type Accent, type ThemeMode } from '@shared/types';
 import { BOARD_THEMES } from '@/config/boards';
 import { PIECE_SETS } from '@/config/pieces';
 import { unlockLevel, type RewardKind } from '@/config/rewards';
+import { exportData, importData, resetProgress } from '@/store/dataActions';
 import { useActiveProfile, useCosmetics, useProfiles } from '@/store/profileStore';
 import { useSettings } from '@/store/settingsStore';
 import { cx } from '@/utils/format';
@@ -65,6 +67,184 @@ function CosmeticPicker({
         })}
       </div>
     </div>
+  );
+}
+
+/** A labelled row with a control on the right, laid out like a Toggle. */
+function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2">
+      <div>
+        <div className="text-sm font-medium text-fg">{label}</div>
+        {description && <div className="text-xs text-muted">{description}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function SoundSettings() {
+  const { settings, update } = useSettings();
+  const sliderId = useId();
+  // The slider moves freely; the value is saved (and previewed) when it is released.
+  const [draft, setDraft] = useState<number | null>(null);
+  const percent = Math.round((draft ?? settings.volume) * 100);
+  const commit = () => {
+    if (draft === null) return;
+    update({ volume: draft });
+    setDraft(null);
+    playSound('move');
+  };
+  return (
+    <Card className="flex flex-col">
+      <CardTitle className="mb-2">Sound</CardTitle>
+      <Toggle
+        label="Sound effects"
+        description="Moves, captures, checks, results and level-ups"
+        checked={settings.sound}
+        onChange={(sound) => {
+          update({ sound });
+          if (sound) playSound('move');
+        }}
+      />
+      <div className={cx('flex items-center gap-3 py-2', !settings.sound && 'opacity-50')}>
+        <label htmlFor={sliderId} className="w-16 shrink-0 text-sm font-medium">
+          Volume
+        </label>
+        <input
+          id={sliderId}
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={percent}
+          disabled={!settings.sound}
+          aria-valuetext={`${percent}%`}
+          onChange={(e) => setDraft(Number(e.target.value) / 100)}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+          className="h-1.5 flex-1 cursor-pointer accent-(--accent) disabled:cursor-not-allowed"
+        />
+        <span className="w-10 text-right text-sm text-muted tabular-nums">{percent}%</span>
+      </div>
+    </Card>
+  );
+}
+
+type Confirm = null | 'import' | 'reset';
+
+function AppSettings() {
+  const { settings, update } = useSettings();
+  const [confirm, setConfirm] = useState<Confirm>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (action: () => Promise<unknown>) => {
+    setConfirm(null);
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="col-span-2">
+      <CardTitle className="mb-2">App</CardTitle>
+      <div className="grid grid-cols-2 gap-x-10">
+        <div>
+          <Toggle
+            label="Update automatically"
+            description="Download new versions in the background"
+            checked={settings.autoUpdate}
+            onChange={(autoUpdate) => update({ autoUpdate })}
+          />
+          <SettingRow label="Check for updates" description="Available in installed release builds">
+            <Button size="sm" disabled>
+              Check now
+            </Button>
+          </SettingRow>
+          <Toggle
+            label="Launch at startup"
+            description="Open Chess Arena when you sign in to Windows"
+            checked={settings.launchAtStartup}
+            onChange={(launchAtStartup) => update({ launchAtStartup })}
+          />
+          <SettingRow label="Data folder" description="Where your profiles and games are stored">
+            <Button size="sm" onClick={() => window.chessArena.app.openDataFolder()}>
+              Open folder
+            </Button>
+          </SettingRow>
+        </div>
+        <div>
+          <SettingRow label="Export data" description="Profiles, history and settings in one file">
+            <Button size="sm" disabled={busy} onClick={() => void run(exportData)}>
+              Export…
+            </Button>
+          </SettingRow>
+          <SettingRow label="Import data" description="Restore a file made with Export">
+            <Button size="sm" disabled={busy} onClick={() => setConfirm('import')}>
+              Import…
+            </Button>
+          </SettingRow>
+          <SettingRow
+            label="Reset progress"
+            description="All profiles back to level 1; history is deleted"
+          >
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => setConfirm('reset')}>
+              Reset…
+            </Button>
+          </SettingRow>
+        </div>
+      </div>
+
+      <Modal
+        open={confirm === 'import'}
+        title="Import data?"
+        onClose={() => setConfirm(null)}
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setConfirm(null)} data-autofocus>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => void run(importData)}>
+              Choose file…
+            </Button>
+          </>
+        }
+      >
+        The profiles, game history and settings on this PC will be <b>replaced</b> by the ones in
+        the backup file. Export first if you want to keep the current data.
+      </Modal>
+
+      <Modal
+        open={confirm === 'reset'}
+        title="Reset all progress?"
+        onClose={() => setConfirm(null)}
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setConfirm(null)} data-autofocus>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={() => void run(resetProgress)}>
+              Reset progress
+            </Button>
+          </>
+        }
+      >
+        Every profile goes back to level 1 with no XP, stats, achievements or equipped rewards. The
+        game history and any saved game are deleted. Profile names, avatars and settings are kept.
+        <p className="mt-2 font-semibold text-danger">This cannot be undone.</p>
+      </Modal>
+    </Card>
   );
 }
 
@@ -143,37 +323,42 @@ export function SettingsScreen() {
           />
         </Card>
 
-        <Card className="flex flex-col">
-          <CardTitle className="mb-2">Gameplay</CardTitle>
-          <Toggle
-            label="Show legal moves"
-            checked={settings.legalMoves}
-            onChange={(legalMoves) => update({ legalMoves })}
-          />
-          <Toggle
-            label="Board coordinates"
-            checked={settings.coordinates}
-            onChange={(coordinates) => update({ coordinates })}
-          />
-          <Toggle
-            label="Auto-queen"
-            description="Promote to a queen without asking"
-            checked={settings.autoQueen}
-            onChange={(autoQueen) => update({ autoQueen })}
-          />
-          <Toggle
-            label="Animations"
-            description="Piece movement and effects"
-            checked={settings.animations}
-            onChange={(animations) => update({ animations })}
-          />
-          <Toggle
-            label="Colour-blind highlights"
-            description="Blue/orange highlights instead of yellow/green"
-            checked={settings.colorBlindHighlights}
-            onChange={(colorBlindHighlights) => update({ colorBlindHighlights })}
-          />
-        </Card>
+        <div className="flex flex-col gap-4">
+          <Card className="flex flex-col">
+            <CardTitle className="mb-2">Gameplay</CardTitle>
+            <Toggle
+              label="Show legal moves"
+              checked={settings.legalMoves}
+              onChange={(legalMoves) => update({ legalMoves })}
+            />
+            <Toggle
+              label="Board coordinates"
+              checked={settings.coordinates}
+              onChange={(coordinates) => update({ coordinates })}
+            />
+            <Toggle
+              label="Auto-queen"
+              description="Promote to a queen without asking"
+              checked={settings.autoQueen}
+              onChange={(autoQueen) => update({ autoQueen })}
+            />
+            <Toggle
+              label="Animations"
+              description="Piece movement and effects"
+              checked={settings.animations}
+              onChange={(animations) => update({ animations })}
+            />
+            <Toggle
+              label="Colour-blind highlights"
+              description="Blue/orange highlights instead of yellow/green"
+              checked={settings.colorBlindHighlights}
+              onChange={(colorBlindHighlights) => update({ colorBlindHighlights })}
+            />
+          </Card>
+          <SoundSettings />
+        </div>
+
+        <AppSettings />
       </div>
     </ScreenShell>
   );
