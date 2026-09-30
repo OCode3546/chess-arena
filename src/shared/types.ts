@@ -1,5 +1,9 @@
 /** Types shared by the main process, the preload bridge and the renderer. */
 
+import type { SearchRequest, SearchResult } from './uci';
+
+export type { SearchRequest, SearchResult };
+
 export type Color = 'w' | 'b';
 export type Difficulty = 'beginner' | 'easy' | 'medium' | 'hard' | 'expert' | 'grandmaster';
 
@@ -55,7 +59,18 @@ export interface GameSettings {
   timeControl: TimeControl;
   players: { w: PlayerInfo; b: PlayerInfo };
   autoFlip: boolean;
+  /** vs AI only. */
   difficulty?: Difficulty;
+  /** vs AI only: the side the human plays. */
+  humanColor?: Color;
+  /** vs AI only: hints and takebacks allowed (each costs XP). */
+  assists?: boolean;
+}
+
+/** Hints and takebacks used in a vs-AI game (drives the XP penalty). */
+export interface AssistsUsed {
+  hints: number;
+  undos: number;
 }
 
 export interface SavedGame {
@@ -67,6 +82,19 @@ export interface SavedGame {
   startedAt: string;
   /** True once White has moved and the clocks are live. */
   clockStarted: boolean;
+  /** Absent in saves from before vs-AI support. */
+  assists?: AssistsUsed;
+}
+
+export type EngineBackend = 'native' | 'wasm' | 'minimax';
+
+export interface EngineStatus {
+  /** Native Stockfish is running. */
+  native: boolean;
+  name?: string;
+  error?: string;
+  /** Fallback backends the renderer may use, in order. */
+  fallbacks: Exclude<EngineBackend, 'native'>[];
 }
 
 export type LoadResult<T> = { ok: true; data: T | null } | { ok: false; error: 'corrupt' };
@@ -101,5 +129,13 @@ export interface ChessArenaApi {
     getSavedGame(): Promise<LoadResult<SavedGame>>;
     setSavedGame(game: SavedGame): Promise<boolean>;
     clearSavedGame(): Promise<void>;
+  };
+  engine: {
+    /** Start (or report on) the native engine. */
+    start(): Promise<EngineStatus>;
+    /** Search with the native engine; rejects if it is unavailable or fails. */
+    bestMove(req: SearchRequest): Promise<SearchResult>;
+    /** Finish the current search early (its result is still delivered). */
+    stop(): void;
   };
 }

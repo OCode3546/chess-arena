@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Card, CardTitle } from '@/components/ui';
 
+const link = 'text-accent-soft underline-offset-2 hover:underline';
+
 export function AboutScreen() {
   const [version, setVersion] = useState('');
   useEffect(() => {
@@ -30,6 +32,36 @@ export function AboutScreen() {
             <li>“Classic” pieces: Armando Hernández Marroquín (GPLv2+), via lichess</li>
             <li>Fonts: Inter, Space Grotesk (SIL OFL 1.1)</li>
           </ul>
+        </Card>
+        <Card className="col-span-2">
+          <CardTitle>Chess engine</CardTitle>
+          <p className="mt-2 text-sm text-muted">
+            The computer opponent is{' '}
+            <a className={link} href="https://stockfishchess.org/" target="_blank" rel="noreferrer">
+              Stockfish 19
+            </a>
+            , free software under the GNU General Public License v3 (see{' '}
+            <code>LICENSES/Stockfish-GPL-3.0.txt</code> next to the app). The bundled binary is the
+            unmodified official release; its source code is available at{' '}
+            <a
+              className={link}
+              href="https://github.com/official-stockfish/Stockfish/tree/sf_19"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/official-stockfish/Stockfish
+            </a>
+            . If it cannot run, the app falls back to{' '}
+            <a
+              className={link}
+              href="https://github.com/nmrugg/stockfish.js"
+              target="_blank"
+              rel="noreferrer"
+            >
+              stockfish.js
+            </a>{' '}
+            (WebAssembly, GPLv3) and then to a small built-in engine.
+          </p>
         </Card>
       </div>
     </ScreenShell>

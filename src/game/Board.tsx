@@ -116,6 +116,10 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
   const viewPly = useGameStore((s) => s.viewPly);
   const status = useGameStore((s) => s.status);
   const paused = useGameStore((s) => s.paused);
+  const hint = useGameStore((s) => s.hint);
+  const aiTurn = useGameStore(
+    (s) => s.settings?.mode === 'pvai' && s.fen.split(' ')[1] !== s.settings.humanColor,
+  );
   const selectSquare = useGameStore((s) => s.selectSquare);
   const attemptMove = useGameStore((s) => s.attemptMove);
   const settings = useSettings((s) => s.settings);
@@ -148,7 +152,7 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
     return c.inCheck() ? c.findPiece({ type: 'k', color: c.turn() })[0] : undefined;
   }, [shownFen]);
 
-  const canMove = interactive && status === 'playing' && !paused && viewPly === null;
+  const canMove = interactive && status === 'playing' && !paused && viewPly === null && !aiTurn;
   const squarePx = size / 8;
   const hl = settings.colorBlindHighlights ? HIGHLIGHT.colorBlind : HIGHLIGHT.normal;
   const theme = boardTheme(settings.board);
@@ -308,6 +312,9 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
           {isLast && <div className="absolute inset-0" style={{ background: hl.last }} />}
           {selected === sq && (
             <div className="absolute inset-0" style={{ background: hl.selected }} />
+          )}
+          {hint && viewPly === null && (hint.from === sq || hint.to === sq) && (
+            <div className="hint-square absolute inset-0" />
           )}
           {checkSquare === sq && (
             <div className="check-pulse absolute inset-0 rounded-full blur-[1px]" />

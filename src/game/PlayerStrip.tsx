@@ -2,7 +2,8 @@ import type { PieceSymbol } from 'chess.js';
 import { useMemo } from 'react';
 import type { Color } from '@shared/types';
 import { pieceUrl } from '@/config/pieces';
-import { useGameStore } from '@/store/gameStore';
+import { useAiUi } from '@/ai/useAiOpponent';
+import { aiColorOf, useGameStore } from '@/store/gameStore';
 import { useSettings } from '@/store/settingsStore';
 import { cx, formatClock } from '@/utils/format';
 import { capturedPieces } from './pieceIds';
@@ -43,6 +44,8 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
   const viewPly = useGameStore((s) => s.viewPly);
   const toMove = useGameStore((s) => s.status === 'playing' && s.fen.split(' ')[1] === color);
   const pieceSet = useSettings((s) => s.settings.pieceSet);
+  const isAi = useGameStore((s) => aiColorOf(s.settings) === color);
+  const thinking = useAiUi((s) => s.thinking) && isAi && toMove;
 
   const shown = viewPly === null ? history : history.slice(0, viewPly);
   const { taken, advantage } = useMemo(() => {
@@ -77,9 +80,14 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold">{name}</div>
-          <div className="text-xs text-muted">
+          <div className="text-xs text-muted" aria-live={isAi ? 'polite' : undefined}>
             {color === 'w' ? 'White' : 'Black'}
-            {toMove && ' · to move'}
+            {isAi && ' · Computer'}
+            {thinking ? (
+              <span className="thinking ml-1 text-accent-soft">· thinking</span>
+            ) : (
+              toMove && ' · to move'
+            )}
           </div>
         </div>
         {!compact && <Clock color={color} />}

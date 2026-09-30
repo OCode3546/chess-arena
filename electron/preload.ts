@@ -31,6 +31,11 @@ const api: ChessArenaApi = {
     setSavedGame: (game) => ipcRenderer.invoke(IPC.savedGameSet, game),
     clearSavedGame: () => ipcRenderer.invoke(IPC.savedGameClear),
   },
+  engine: {
+    start: () => ipcRenderer.invoke(IPC.engineStart),
+    bestMove: (req) => ipcRenderer.invoke(IPC.engineBestMove, req),
+    stop: () => ipcRenderer.send(IPC.engineStop),
+  },
 };
 
 contextBridge.exposeInMainWorld('chessArena', api);

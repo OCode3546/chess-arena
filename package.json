@@ -1,7 +1,7 @@
 {
   "name": "chess-arena",
   "productName": "Chess Arena",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A modern 2D chess game for Windows — play locally or against the computer.",
   "author": "Chess Arena",
   "private": true,
@@ -11,13 +11,15 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:sandbox": "electron-vite build && node scripts/smoke.mjs",
-    "dist:win": "electron-vite build && electron-builder --win"
+    "fetch:engine": "node scripts/fetch-engine.mjs",
+    "ai:sim": "vitest run --config vitest.sim.config.ts",
+    "dist:win": "node scripts/fetch-engine.mjs win32 x64 && electron-vite build && electron-builder --win"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -46,6 +48,7 @@
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.12.0",
     "prettier": "^3.9.9",
+    "stockfish": "^19.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0",

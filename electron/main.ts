@@ -9,7 +9,9 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron';
 import { IPC } from '@shared/ipc';
-import type { WindowState } from '@shared/types';
+import type { EngineStatus, WindowState } from '@shared/types';
+import { isSearchRequest } from '@shared/validate';
+import { NativeEngine, type NativeEngineStatus } from './engine';
 import {
   clearSavedGame,
   getSavedGame,
@@ -29,6 +31,7 @@ const EXTERNAL_ALLOW = [
   'https://stockfishchess.org/',
   'https://github.com/official-stockfish/',
   'https://github.com/lichess-org/',
+  'https://github.com/nmrugg/stockfish.js',
 ];
 
 if (process.env['CHESS_ARENA_USER_DATA']) {
@@ -37,6 +40,34 @@ if (process.env['CHESS_ARENA_USER_DATA']) {
 
 let mainWindow: BrowserWindow | null = null;
 let allowClose = false;
+let engine: NativeEngine | null = null;
+
+/** Bundled Stockfish for this OS (`CHESS_ARENA_ENGINE_PATH` overrides it for testing). */
+function engineBinaryPath(): string | null {
+  const override = process.env['CHESS_ARENA_ENGINE_PATH'];
+  if (override !== undefined) return override || null;
+  const arm = process.arch === 'arm64';
+  const file =
+    process.platform === 'win32'
+      ? `stockfish-windows-${arm ? 'arm64' : 'x86-64'}.exe`
+      : process.platform === 'darwin'
+        ? 'stockfish-macos'
+        : `stockfish-linux-${arm ? 'arm64' : 'x86-64'}`;
+  const dir = app.isPackaged
+    ? join(process.resourcesPath, 'engine')
+    : join(app.getAppPath(), 'resources', 'engine');
+  return join(dir, file);
+}
+
+/** Fallback order for the renderer; `CHESS_ARENA_ENGINE_FALLBACKS` narrows it for testing. */
+function engineFallbacks(): EngineStatus['fallbacks'] {
+  const all: EngineStatus['fallbacks'] = ['wasm', 'minimax'];
+  const env = process.env['CHESS_ARENA_ENGINE_FALLBACKS'];
+  if (env === undefined) return all;
+  const wanted = env.split(',').map((s) => s.trim());
+  const picked = all.filter((b) => wanted.includes(b));
+  return picked.includes('minimax') ? picked : [...picked, 'minimax'];
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -52,6 +83,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   initStorage();
+  engine = new NativeEngine(engineBinaryPath());
   Menu.setApplicationMenu(null);
   registerIpc();
   createWindow();
@@ -204,8 +236,30 @@ function registerIpc(): void {
   handle(IPC.savedGameGet, () => getSavedGame());
   handle(IPC.savedGameSet, (game: unknown) => setSavedGame(game));
   handle(IPC.savedGameClear, () => clearSavedGame());
+
+  handle(IPC.engineStart, async (): Promise<EngineStatus> => {
+    const status: NativeEngineStatus = engine
+      ? await engine.start()
+      : { ok: false, error: 'Engine unavailable' };
+    return {
+      native: status.ok,
+      name: status.name,
+      error: status.error,
+      fallbacks: engineFallbacks(),
+    };
+  });
+  handle(IPC.engineBestMove, (req: unknown) => {
+    if (!isSearchRequest(req)) throw new Error('Invalid engine request');
+    if (!engine) throw new Error('Engine unavailable');
+    return engine.search(req);
+  });
+  on(IPC.engineStop, () => engine?.stop());
 }
 
 app.on('window-all-closed', () => {
   app.quit();
 });
+
+// Never leave a Stockfish process behind.
+app.on('will-quit', () => engine?.dispose());
+process.on('exit', () => engine?.dispose());

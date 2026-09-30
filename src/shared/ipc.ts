@@ -16,4 +16,7 @@ export const IPC = {
   savedGameGet: 'storage:saved-game-get',
   savedGameSet: 'storage:saved-game-set',
   savedGameClear: 'storage:saved-game-clear',
+  engineStart: 'engine:start',
+  engineBestMove: 'engine:bestmove',
+  engineStop: 'engine:stop',
 } as const;

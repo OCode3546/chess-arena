@@ -20,10 +20,15 @@ export function GameOverModal({
   const result = useGameStore((s) => s.result);
   const players = useGameStore((s) => s.settings?.players);
   const moves = useGameStore((s) => s.history.length);
+  const human = useGameStore((s) => (s.settings?.mode === 'pvai' ? s.settings.humanColor : null));
   if (!result || !players) return null;
 
   const winnerName = result.winner ? players[result.winner].name : null;
-  const headline = result.winner ? 'Victory' : 'Draw';
+  const headline = !result.winner
+    ? 'Draw'
+    : human && result.winner !== human
+      ? 'Defeat'
+      : 'Victory';
   const detail = result.winner
     ? `${winnerName} (${result.winner === 'w' ? 'White' : 'Black'}) wins ${REASON_LABEL[result.reason]}.`
     : `The game is drawn ${REASON_LABEL[result.reason]}.`;

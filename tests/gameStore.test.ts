@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { GameSettings, SavedGame } from '@shared/types';
-import { setGamePersistence, useGameStore } from '@/store/gameStore';
+import { setGamePersistence, undoablePlies, useGameStore } from '@/store/gameStore';
 
 const store = () => useGameStore.getState();
 
@@ -236,5 +236,119 @@ describe('save / resume', () => {
     expect(store().restore({ ...base, pgn: '1. e4 Kxz9 ???' })).toBe(false);
     expect(store().restore(base)).toBe(false);
     expect(store().status).toBe('idle');
+  });
+});
+
+describe('vs AI', () => {
+  const aiSettings = (humanColor: 'w' | 'b', assists = true, initialMin = 0): GameSettings => ({
+    mode: 'pvai',
+    timeControl: { id: 'test', initialMs: initialMin * 60_000, incrementMs: 0 },
+    players:
+      humanColor === 'w'
+        ? { w: { name: 'Alice' }, b: { name: 'Stockfish · Medium' } }
+        : { w: { name: 'Stockfish · Medium' }, b: { name: 'Alice' } },
+    autoFlip: false,
+    difficulty: 'medium',
+    humanColor,
+    assists,
+  });
+
+  it('faces the human side and blocks moves for the AI side', () => {
+    store().newGame(aiSettings('b'));
+    expect(store().orientation).toBe('b');
+    expect(store().attemptMove('e2', 'e4')).toBe('illegal');
+    expect(store().applyAiMove('e2e4')).toBe(true);
+    expect(store().applyAiMove('e7e5')).toBe(false);
+    expect(store().attemptMove('e7', 'e5')).toBe('moved');
+  });
+
+  it('rejects illegal or malformed engine moves', () => {
+    store().newGame(aiSettings('b'));
+    expect(store().applyAiMove('e2e5')).toBe(false);
+    expect(store().applyAiMove('zz')).toBe(false);
+    expect(store().history).toHaveLength(0);
+  });
+
+  it('plays engine promotions', () => {
+    const c = new Chess('8/8/8/8/8/k7/7p/K7 b - - 0 1');
+    store().restore({
+      fen: c.fen(),
+      pgn: c.pgn(),
+      clocks: { w: 0, b: 0 },
+      settings: aiSettings('w'),
+      turn: 'b',
+      startedAt: new Date().toISOString(),
+      clockStarted: false,
+    });
+    expect(store().applyAiMove('h2h1q')).toBe(true);
+    expect(store().history.at(-1)?.san).toBe('h1=Q#');
+  });
+
+  it('takes back the human move and the AI reply, counting each undo', () => {
+    store().newGame(aiSettings('w'));
+    store().attemptMove('e2', 'e4');
+    store().applyAiMove('e7e5');
+    store().attemptMove('g1', 'f3');
+    store().applyAiMove('b8c6');
+    expect(undoablePlies(store())).toBe(2);
+    expect(store().undo()).toBe(true);
+    expect(store().history.map((m) => m.san)).toEqual(['e4', 'e5']);
+    expect(store().assists.undos).toBe(1);
+    expect(saved?.assists).toEqual({ hints: 0, undos: 1 });
+  });
+
+  it('while the AI is to move, undo takes back just the human move', () => {
+    store().newGame(aiSettings('w'));
+    store().attemptMove('e2', 'e4');
+    expect(undoablePlies(store())).toBe(1);
+    store().undo();
+    expect(store().history).toHaveLength(0);
+    expect(store().clockStarted).toBe(false);
+  });
+
+  it('has nothing to undo before the human has moved (AI plays White)', () => {
+    store().newGame(aiSettings('b'));
+    store().applyAiMove('d2d4');
+    expect(undoablePlies(store())).toBe(0);
+    expect(store().undo()).toBe(false);
+  });
+
+  it('refuses undo and hints when assists are off', () => {
+    store().newGame(aiSettings('w', false));
+    store().attemptMove('e2', 'e4');
+    store().applyAiMove('e7e5');
+    expect(store().undo()).toBe(false);
+    store().showHint('g1', 'f3');
+    expect(store().hint).toBeNull();
+    expect(store().assists).toEqual({ hints: 0, undos: 0 });
+  });
+
+  it('shows and clears hints, and persists the count across a resume', () => {
+    store().newGame(aiSettings('w'));
+    store().showHint('e2', 'e4');
+    expect(store().hint).toEqual({ from: 'e2', to: 'e4' });
+    store().attemptMove('e2', 'e4');
+    expect(store().hint).toBeNull();
+    const snapshot = structuredClone(saved!);
+    store().reset();
+    expect(store().restore(snapshot)).toBe(true);
+    expect(store().assists).toEqual({ hints: 1, undos: 0 });
+    expect(store().orientation).toBe('w');
+  });
+
+  it('the AI clock starts with its first move as White and times out like a human', () => {
+    store().newGame(aiSettings('b', false, 1), 0);
+    store().applyAiMove('e2e4', 500);
+    expect(store().clockStarted).toBe(true);
+    store().attemptMove('e7', 'e5', { now: 1_000 });
+    store().tick(62_000);
+    expect(store().result).toMatchObject({ winner: 'b', reason: 'timeout' });
+  });
+
+  it('the human resigns as their own colour', () => {
+    store().newGame(aiSettings('b'));
+    store().applyAiMove('e2e4');
+    store().resign('b');
+    expect(store().result).toMatchObject({ result: '1-0', reason: 'resignation' });
   });
 });

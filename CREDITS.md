@@ -9,4 +9,13 @@
 | Inter                         | The Inter Project Authors         | SIL OFL 1.1 (`LICENSES/Inter-OFL-1.1.txt`)          | https://github.com/rsms/inter                                         |
 | Space Grotesk                 | The Space Grotesk Project Authors | SIL OFL 1.1 (`LICENSES/SpaceGrotesk-OFL-1.1.txt`)   | https://github.com/floriankarsten/space-grotesk                       |
 
-Stockfish (GPLv3) will be added in Phase 4 together with its license text and source link.
+## Chess engine
+
+| Component                                   | Author                                     | License                                    | Source                                           |
+| ------------------------------------------- | ------------------------------------------ | ------------------------------------------ | ------------------------------------------------ |
+| Stockfish 19 (native binary, `engine/`)     | The Stockfish developers (see its AUTHORS) | GPLv3 (`LICENSES/Stockfish-GPL-3.0.txt`)   | https://github.com/official-stockfish/Stockfish  |
+| stockfish.js 19 (WebAssembly fallback)      | Nathan Rugg, Chess.com, Stockfish authors  | GPLv3 (`LICENSES/Stockfish-GPL-3.0.txt`)   | https://github.com/nmrugg/stockfish.js           |
+
+The native binaries are the unmodified official `sf_19` release builds, downloaded and
+SHA-256-verified by `scripts/fetch-engine.mjs`. Their corresponding source code is the `sf_19`
+tag of the Stockfish repository: https://github.com/official-stockfish/Stockfish/tree/sf_19

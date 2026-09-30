@@ -1,6 +1,7 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { aiEngine } from '@/ai/engine';
 import { Button, Modal, ToastHost } from '@/components/ui';
 import { AboutScreen } from '@/screens/AboutScreen';
 import { GameScreen } from '@/screens/GameScreen';
@@ -21,16 +22,31 @@ import { toast } from '@/store/toastStore';
 import { TitleBar } from './TitleBar';
 
 const SPLASH_MIN_MS = 700;
+/** Longest the splash waits for the chess engine before showing the app anyway. */
+const ENGINE_WAIT_MS = 2500;
+
+const BACKEND_NOTICE = {
+  wasm: 'Stockfish could not start on this PC — using the WebAssembly version instead.',
+  minimax: 'Stockfish is unavailable — using the basic built-in engine.',
+} as const;
 
 export function App() {
   const [ready, setReady] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const { theme, accent, animations } = useSettings((s) => s.settings);
 
-  // Boot: settings, storage health, saved game.
+  // Boot: settings, storage health, saved game, engine.
   useEffect(() => {
     wireGamePersistence();
     const started = Date.now();
+    const offBackend = aiEngine.onBackendChange((backend) => {
+      document.documentElement.dataset.engine = backend;
+      if (backend !== 'native') toast(BACKEND_NOTICE[backend], 'warning');
+    });
+    const engineReady = Promise.race([
+      aiEngine.warmUp().catch((err) => console.error(err)),
+      new Promise((r) => window.setTimeout(r, ENGINE_WAIT_MS)),
+    ]);
     void (async () => {
       try {
         await useSettings.getState().load();
@@ -42,8 +58,10 @@ export function App() {
         console.error(err);
         toast('Some saved data could not be loaded.', 'error');
       }
+      await engineReady;
       window.setTimeout(() => setReady(true), Math.max(0, SPLASH_MIN_MS - (Date.now() - started)));
     })();
+    return offBackend;
   }, []);
 
   // Theme tokens live on <html>.

@@ -1,6 +1,6 @@
 import { Chess, type Move, type PieceSymbol, type Square } from 'chess.js';
 import { create } from 'zustand';
-import type { Color, GameSettings, SavedGame } from '@shared/types';
+import type { AssistsUsed, Color, GameSettings, SavedGame } from '@shared/types';
 import {
   detectGameEnd,
   draw,
@@ -45,6 +45,10 @@ export interface GameState {
   result: GameResult | null;
   /** Ply shown on the board while reviewing; null = live position. */
   viewPly: number | null;
+  /** vs AI: hints and takebacks used so far (XP penalty). */
+  assists: AssistsUsed;
+  /** vs AI: the suggested move currently shown on the board. */
+  hint: { from: Square; to: Square } | null;
 
   newGame(settings: GameSettings, now?: number): void;
   restore(saved: SavedGame): boolean;
@@ -56,6 +60,12 @@ export interface GameState {
     opts?: { autoQueen?: boolean; now?: number },
   ): 'moved' | 'promotion' | 'illegal';
   choosePromotion(piece: PromotionPiece, now?: number): void;
+  /** vs AI: play the engine's move (UCI). Returns false if it is not the AI's turn or illegal. */
+  applyAiMove(uci: string, now?: number): boolean;
+  /** vs AI: take back the human's last move (and the AI's reply). */
+  undo(now?: number): boolean;
+  /** vs AI: show a suggested move and count it as a used hint. */
+  showHint(from: Square, to: Square): void;
   cancelPromotion(): void;
   tick(now?: number): void;
   setPaused(paused: boolean, now?: number): void;
@@ -87,7 +97,18 @@ const initial = {
   lastTick: null,
   result: null,
   viewPly: null,
+  assists: { hints: 0, undos: 0 },
+  hint: null,
 };
+
+/** The side the computer plays, or null outside vs-AI games. */
+export function aiColorOf(settings: GameSettings | null): Color | null {
+  if (!settings || settings.mode !== 'pvai' || !settings.humanColor) return null;
+  return other(settings.humanColor);
+}
+
+const startOrientation = (settings: GameSettings): Color =>
+  settings.mode === 'pvai' && settings.humanColor ? settings.humanColor : 'w';
 
 function legalTargetsFrom(square: Square): Square[] {
   return chess.moves({ square, verbose: true }).map((m) => m.to);
@@ -161,6 +182,7 @@ export const useGameStore = create<GameState>()((set, get) => {
       clockStarted,
       lastTick: now,
       viewPly: null,
+      hint: null,
       orientation:
         state.settings?.autoFlip && state.settings.mode === 'pvp' ? next : state.orientation,
     });
@@ -171,7 +193,12 @@ export const useGameStore = create<GameState>()((set, get) => {
 
   const canInteract = () => {
     const s = get();
-    return s.status === 'playing' && !s.paused && s.viewPly === null;
+    return (
+      s.status === 'playing' &&
+      !s.paused &&
+      s.viewPly === null &&
+      chess.turn() !== aiColorOf(s.settings)
+    );
   };
 
   return {
@@ -189,6 +216,7 @@ export const useGameStore = create<GameState>()((set, get) => {
         startedAt,
         fen: chess.fen(),
         clocks: { w: t, b: t },
+        orientation: startOrientation(settings),
       });
       get().persist();
     },
@@ -213,7 +241,11 @@ export const useGameStore = create<GameState>()((set, get) => {
         history: c.history({ verbose: true }),
         clocks: { ...saved.clocks },
         clockStarted: saved.clockStarted,
-        orientation: saved.settings.autoFlip && saved.settings.mode === 'pvp' ? c.turn() : 'w',
+        orientation:
+          saved.settings.autoFlip && saved.settings.mode === 'pvp'
+            ? c.turn()
+            : startOrientation(saved.settings),
+        assists: { hints: saved.assists?.hints ?? 0, undos: saved.assists?.undos ?? 0 },
         // Resume paused so no time is lost before the player is ready.
         paused: timed && saved.clockStarted,
       });
@@ -258,6 +290,48 @@ export const useGameStore = create<GameState>()((set, get) => {
 
     cancelPromotion() {
       set({ pendingPromotion: null });
+    },
+
+    applyAiMove(uci, now = Date.now()) {
+      const s = get();
+      if (s.status !== 'playing' || s.paused || chess.turn() !== aiColorOf(s.settings))
+        return false;
+      const move = chess.moves({ verbose: true }).find((m) => m.lan === uci);
+      if (!move) return false;
+      commitMove(move.from, move.to, move.promotion as PromotionPiece | undefined, now);
+      return true;
+    },
+
+    undo(now = Date.now()) {
+      const s = get();
+      const ai = aiColorOf(s.settings);
+      if (s.status !== 'playing' || s.paused || !ai || !s.settings?.assists) return false;
+      const plies = undoablePlies(s);
+      if (plies === 0) return false;
+      for (let i = 0; i < plies; i++) chess.undo();
+      const history = chess.history({ verbose: true });
+      const clockStarted = s.clockStarted && history.length > 0;
+      set({
+        fen: chess.fen(),
+        history,
+        selected: null,
+        legalTargets: [],
+        pendingPromotion: null,
+        viewPly: null,
+        hint: null,
+        clockStarted,
+        lastTick: clockStarted ? now : null,
+        assists: { ...s.assists, undos: s.assists.undos + 1 },
+      });
+      get().persist();
+      return true;
+    },
+
+    showHint(from, to) {
+      const s = get();
+      if (s.status !== 'playing' || !s.settings?.assists) return;
+      set({ hint: { from, to }, assists: { ...s.assists, hints: s.assists.hints + 1 } });
+      get().persist();
     },
 
     tick(now = Date.now()) {
@@ -317,6 +391,7 @@ export const useGameStore = create<GameState>()((set, get) => {
         turn: chess.turn(),
         startedAt: s.startedAt,
         clockStarted: s.clockStarted,
+        assists: { ...s.assists },
       };
     },
 
@@ -332,6 +407,24 @@ export const useGameStore = create<GameState>()((set, get) => {
     },
   };
 });
+
+/**
+ * Plies a vs-AI takeback removes: on the human's turn their last move and the AI's
+ * reply; while the AI is to move, just the human's move. 0 = nothing to take back.
+ */
+export function undoablePlies(s: Pick<GameState, 'settings' | 'history' | 'fen'>): number {
+  const ai = aiColorOf(s.settings);
+  if (!ai) return 0;
+  const n = s.history.length;
+  if (s.fen.split(' ')[1] === ai) return n >= 1 ? 1 : 0;
+  return n >= 2 ? 2 : 0;
+}
+
+/** Start position + UCI moves of the live game, as engines want it. */
+export function enginePosition(): { fen: string; moves: string[] } {
+  const history = chess.history({ verbose: true });
+  return { fen: history[0]?.before ?? chess.fen(), moves: history.map((m) => m.lan) };
+}
 
 /** The PGN of the current game (including headers and result). */
 export function currentPgn(): string {

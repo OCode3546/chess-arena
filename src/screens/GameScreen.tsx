@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAiOpponent } from '@/ai/useAiOpponent';
 import { Button, Modal, Tabs } from '@/components/ui';
 import { Board } from '@/game/Board';
 import { GameOverModal } from '@/game/GameOverModal';
 import { MoveList } from '@/game/MoveList';
 import { PlayerStrip } from '@/game/PlayerStrip';
 import { other, REASON_LABEL, type GameResult } from '@/game/rules';
-import { useGameStore } from '@/store/gameStore';
+import { aiColorOf, undoablePlies, useGameStore } from '@/store/gameStore';
 import { useMediaQuery } from '@/utils/useMediaQuery';
 
 type Dialog = null | 'resign' | 'draw';
@@ -22,7 +23,11 @@ export function GameScreen() {
   const result = useGameStore((s) => s.result);
   const turn = useGameStore((s) => s.fen.split(' ')[1] as 'w' | 'b');
   const viewPly = useGameStore((s) => s.viewPly);
+  const canUndo = useGameStore(
+    (s) => !!s.settings?.assists && s.status === 'playing' && !s.paused && undoablePlies(s) > 0,
+  );
   const game = useGameStore.getState;
+  const ai = useAiOpponent();
 
   const [dialog, setDialog] = useState<Dialog>(null);
   /** The result whose modal the player closed (to review the game). */
@@ -54,11 +59,14 @@ export function GameScreen() {
   };
   const resume = () => game().setPaused(false);
 
-  // Shortcuts: F flip, Esc pause menu (open modals handle their own Esc).
+  // Shortcuts: F flip, Ctrl+Z takeback, Esc pause menu (open modals handle their own Esc).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
-      if (e.key === 'f' || e.key === 'F') {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (!dialog && canUndo) game().undo();
+      } else if (e.key === 'f' || e.key === 'F') {
         if (!e.ctrlKey && !e.metaKey && !e.altKey) game().flip();
       } else if (e.key === 'Escape') {
         if (!dialog && game().status === 'playing' && !game().pendingPromotion) openPause();
@@ -81,7 +89,11 @@ export function GameScreen() {
   const rematch = () => {
     if (!settings) return;
     setDialog(null);
-    game().newGame({ ...settings, players: { w: settings.players.b, b: settings.players.w } });
+    game().newGame({
+      ...settings,
+      players: { w: settings.players.b, b: settings.players.w },
+      ...(settings.humanColor && { humanColor: other(settings.humanColor) }),
+    });
   };
 
   if (status === 'idle' || !settings) {
@@ -104,15 +116,40 @@ export function GameScreen() {
 
   const top = other(orientation);
   const bottom = orientation;
+  const vsAi = aiColorOf(settings) !== null;
+  // vs AI the human always resigns for themselves; locally the side to move does.
+  const resigner = vsAi && settings.humanColor ? settings.humanColor : turn;
   const moverName = settings.players[turn].name;
 
   const controls = (
     <div className="glass flex flex-col gap-2 rounded-2xl p-3">
       {playing ? (
         <>
+          {vsAi && settings.assists && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => game().undo()}
+                disabled={!canUndo}
+                title="Take back your last move (Ctrl+Z) · costs XP"
+              >
+                ↶ Undo
+              </Button>
+              <Button
+                onClick={() => void ai.requestHint()}
+                disabled={!ai.humanTurn || ai.hintPending || viewPly !== null}
+                title="Show the best move · costs XP"
+              >
+                {ai.hintPending ? 'Thinking…' : '💡 Hint'}
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
-            <Button onClick={() => setDialog('draw')} disabled={viewPly !== null}>
-              ½ Offer draw
+            <Button
+              onClick={() => (vsAi ? void ai.offerDraw() : setDialog('draw'))}
+              disabled={viewPly !== null || (vsAi && !ai.canOfferDraw)}
+              title={vsAi ? 'The computer accepts if the position is level' : undefined}
+            >
+              {ai.drawPending ? 'Considering…' : '½ Offer draw'}
             </Button>
             <Button variant="danger" onClick={() => setDialog('resign')}>
               ⚑ Resign
@@ -159,8 +196,8 @@ export function GameScreen() {
     layout = (
       <div className="grid h-full grid-cols-[260px_minmax(0,1fr)_300px] gap-5 p-5">
         <aside className="flex min-h-0 flex-col justify-between gap-4">
-          <PlayerStrip color={top} />
-          <PlayerStrip color={bottom} />
+          <PlayerStrip color={top} compact />
+          <PlayerStrip color={bottom} compact />
         </aside>
         <div className="min-h-0 min-w-0">
           <Board />
@@ -243,16 +280,16 @@ export function GameScreen() {
               variant="danger"
               onClick={() => {
                 setDialog(null);
-                game().resign(turn);
+                game().resign(resigner);
               }}
             >
-              Resign as {turn === 'w' ? 'White' : 'Black'}
+              Resign as {resigner === 'w' ? 'White' : 'Black'}
             </Button>
           </>
         }
       >
-        {moverName} ({turn === 'w' ? 'White' : 'Black'}) will resign and{' '}
-        {settings.players[other(turn)].name} wins the game.
+        {settings.players[resigner].name} ({resigner === 'w' ? 'White' : 'Black'}) will resign and{' '}
+        {settings.players[other(resigner)].name} wins the game.
       </Modal>
 
       <Modal

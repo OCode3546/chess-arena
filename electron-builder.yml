@@ -1,4 +1,5 @@
-# Packaging config (stub — completed in Phase 8: signing, auto-update, engine unpacking).
+# Packaging config (stub — completed in Phase 8: signing, auto-update).
+# Run `node scripts/fetch-engine.mjs win32 x64` first (done by `npm run dist:win`).
 appId: com.chessarena.app
 productName: Chess Arena
 copyright: Copyright © 2026 Chess Arena
@@ -13,6 +14,10 @@ extraResources:
   - from: LICENSES
     to: LICENSES
     filter: ['**/*']
+  # Native Stockfish lives outside the asar so it can be spawned.
+  - from: resources/engine
+    to: engine
+    filter: ['stockfish-windows-*.exe', 'Copying.txt']
 win:
   target:
     - target: nsis

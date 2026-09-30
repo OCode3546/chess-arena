@@ -6,6 +6,7 @@ import {
   type Settings,
   type TimeControl,
 } from './types';
+import { UCI_MOVE, type SearchRequest } from './uci';
 
 type Obj = Record<string, unknown>;
 
@@ -13,6 +14,8 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const isStr = (v: unknown, max = 256): v is string => typeof v === 'string' && v.length <= max;
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
+const isInt = (v: unknown, min: number, max: number): v is number =>
+  Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
 
 const SLUG = /^[a-z0-9-]{1,40}$/;
 const FEN = /^[pnbrqkPNBRQK1-8/]{15,90} [wb] (-|[KQkq]{1,4}) (-|[a-h][36]) \d{1,4} \d{1,5}$/;
@@ -68,20 +71,18 @@ function isPlayer(v: unknown): boolean {
   return isObj(v) && isStr(v.name, 40);
 }
 
+const DIFFICULTIES = ['beginner', 'easy', 'medium', 'hard', 'expert', 'grandmaster'];
+
 export function isGameSettings(v: unknown): v is GameSettings {
   if (!isObj(v)) return false;
   if (v.mode !== 'pvp' && v.mode !== 'pvai') return false;
   if (!isTimeControl(v.timeControl)) return false;
   if (!isObj(v.players) || !isPlayer(v.players.w) || !isPlayer(v.players.b)) return false;
   if (!isBool(v.autoFlip)) return false;
-  if (
-    v.difficulty !== undefined &&
-    !['beginner', 'easy', 'medium', 'hard', 'expert', 'grandmaster'].includes(
-      v.difficulty as string,
-    )
-  ) {
-    return false;
-  }
+  if (v.difficulty !== undefined && !DIFFICULTIES.includes(v.difficulty as string)) return false;
+  if (v.humanColor !== undefined && v.humanColor !== 'w' && v.humanColor !== 'b') return false;
+  if (v.assists !== undefined && !isBool(v.assists)) return false;
+  if (v.mode === 'pvai' && (v.difficulty === undefined || v.humanColor === undefined)) return false;
   return true;
 }
 
@@ -95,5 +96,23 @@ export function isSavedGame(v: unknown): v is SavedGame {
   if (v.turn !== 'w' && v.turn !== 'b') return false;
   if (!isStr(v.startedAt, 40) || Number.isNaN(Date.parse(v.startedAt))) return false;
   if (!isBool(v.clockStarted)) return false;
+  if (
+    v.assists !== undefined &&
+    !(isObj(v.assists) && isInt(v.assists.hints, 0, 10_000) && isInt(v.assists.undos, 0, 10_000))
+  ) {
+    return false;
+  }
   return isGameSettings(v.settings);
+}
+
+/** Validation of an engine search coming from the renderer. */
+export function isSearchRequest(v: unknown): v is SearchRequest {
+  if (!isObj(v)) return false;
+  if (!isValidFen(v.fen)) return false;
+  if (!Array.isArray(v.moves) || v.moves.length > 2_000) return false;
+  if (!v.moves.every((m) => typeof m === 'string' && UCI_MOVE.test(m))) return false;
+  if (!isInt(v.skill, 0, 20)) return false;
+  if (v.depth !== undefined && !isInt(v.depth, 1, 30)) return false;
+  if (v.movetime !== undefined && !isInt(v.movetime, 10, 10_000)) return false;
+  return true;
 }

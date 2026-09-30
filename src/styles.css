@@ -164,6 +164,41 @@ textarea {
 .low-time {
   animation: low-time 1s ease-in-out infinite;
 }
+/* "thinking…" with dots that fill in one by one. */
+@keyframes thinking-dots {
+  0% {
+    content: '';
+  }
+  25% {
+    content: '.';
+  }
+  50% {
+    content: '..';
+  }
+  75% {
+    content: '...';
+  }
+}
+.thinking::after {
+  content: '...';
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: thinking-dots 1.2s steps(1) infinite;
+}
+@keyframes hint-glow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 3px var(--accent-soft);
+  }
+  50% {
+    box-shadow: inset 0 0 0 6px var(--accent-soft);
+  }
+}
+.hint-square {
+  background: color-mix(in srgb, var(--accent-soft) 30%, transparent);
+  animation: hint-glow 1.4s ease-in-out infinite;
+}
 
 [data-motion='off'] *,
 [data-motion='off'] *::before,
@@ -173,7 +208,9 @@ textarea {
 }
 @media (prefers-reduced-motion: reduce) {
   .check-pulse,
-  .low-time {
+  .low-time,
+  .hint-square,
+  .thinking::after {
     animation: none;
   }
 }
