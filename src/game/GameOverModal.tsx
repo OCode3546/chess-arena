@@ -1,6 +1,8 @@
 import { Button, Modal } from '@/components/ui';
 import { useGameStore } from '@/store/gameStore';
+import { useProfiles } from '@/store/profileStore';
 import { REASON_LABEL } from './rules';
+import { XpSummary } from './XpSummary';
 
 interface GameOverModalProps {
   open: boolean;
@@ -21,6 +23,10 @@ export function GameOverModal({
   const players = useGameStore((s) => s.settings?.players);
   const moves = useGameStore((s) => s.history.length);
   const human = useGameStore((s) => (s.settings?.mode === 'pvai' ? s.settings.humanColor : null));
+  const startedAt = useGameStore((s) => s.startedAt);
+  const awards = useProfiles((s) =>
+    s.lastMatch?.gameId === startedAt ? s.lastMatch.awards : null,
+  );
   if (!result || !players) return null;
 
   const winnerName = result.winner ? players[result.winner].name : null;
@@ -45,6 +51,7 @@ export function GameOverModal({
         <p className="mt-3 text-base text-fg">{detail}</p>
         <p className="mt-1 text-sm text-muted">{Math.ceil(moves / 2)} moves played</p>
       </div>
+      {awards && <XpSummary awards={awards} />}
       <div className="mt-7 grid grid-cols-2 gap-2">
         <Button variant="primary" onClick={onRematch} data-autofocus>
           Rematch

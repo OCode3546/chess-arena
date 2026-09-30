@@ -52,6 +52,62 @@ export interface TimeControl {
 
 export interface PlayerInfo {
   name: string;
+  /** Local profile playing this side; absent for guests and the computer. */
+  profileId?: string;
+}
+
+export interface ProfileStats {
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  /** Consecutive wins up to now. */
+  streak: number;
+  bestStreak: number;
+  /** Local date (YYYY-MM-DD) of the last win vs the computer (first-win-of-the-day bonus). */
+  lastWinDate?: string;
+  winsByDifficulty: Record<Difficulty, number>;
+  /** Fewest moves in a checkmate win. */
+  fastestMate?: number;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  avatarId: string;
+  level: number;
+  /** Cumulative total. */
+  xp: number;
+  createdAt: string;
+  stats: ProfileStats;
+  /** Local games played today per opponent (profile id or 'guest'), for diminishing returns. */
+  pvpToday: Record<string, { date: string; count: number }>;
+}
+
+export interface ProfilesDoc {
+  activeId: string | null;
+  profiles: Profile[];
+}
+
+export type ResultCode = '1-0' | '0-1' | '1/2-1/2';
+
+export interface GameRecord {
+  id: string;
+  /** ISO time the game ended. */
+  date: string;
+  mode: 'pvai' | 'pvp';
+  /** Profile id, 'guest' or 'ai:<difficulty>'. */
+  white: string;
+  black: string;
+  whiteName: string;
+  blackName: string;
+  pgn: string;
+  result: ResultCode;
+  reason: string;
+  /** Full moves played. */
+  moves: number;
+  /** XP per profile id. */
+  xpAwarded: Record<string, number>;
 }
 
 export interface GameSettings {
@@ -129,6 +185,12 @@ export interface ChessArenaApi {
     getSavedGame(): Promise<LoadResult<SavedGame>>;
     setSavedGame(game: SavedGame): Promise<boolean>;
     clearSavedGame(): Promise<void>;
+    getProfiles(): Promise<ProfilesDoc>;
+    /** Replaces all profiles; returns what was stored after validation. */
+    setProfiles(doc: ProfilesDoc): Promise<ProfilesDoc>;
+    /** Finished games, newest first. */
+    getHistory(): Promise<GameRecord[]>;
+    addGameRecord(record: GameRecord): Promise<boolean>;
   };
   engine: {
     /** Start (or report on) the native engine. */

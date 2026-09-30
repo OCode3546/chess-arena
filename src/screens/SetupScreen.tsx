@@ -1,20 +1,90 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Avatar, LevelBadge } from '@/components/Avatar';
+import { cleanName, inputClass, NAME_MAX } from '@/components/fields';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Card, CardTitle, Modal, Tabs, Toggle } from '@/components/ui';
 import { aiPlayerName, DIFFICULTIES, DIFFICULTY_ORDER } from '@/config/difficulty';
+import { AI_XP, PVP_RULES } from '@/config/progression';
 import { CUSTOM_LIMITS, customTimeControl, TIME_CONTROLS } from '@/config/timeControls';
+import { pvpAward } from '@/progression/awards';
+import { GUEST, localDay } from '@/progression/match';
 import { useGameStore } from '@/store/gameStore';
+import { useActiveProfile, useProfiles } from '@/store/profileStore';
 import { useSession } from '@/store/sessionStore';
-import type { Color, Difficulty, GameSettings, TimeControl } from '@shared/types';
+import type {
+  Color,
+  Difficulty,
+  GameSettings,
+  PlayerInfo,
+  Profile,
+  TimeControl,
+} from '@shared/types';
 import { cx } from '@/utils/format';
 
 type Mode = 'pvp' | 'pvai';
 type WhiteChoice = 'a' | 'b' | 'random';
 type ColorChoice = Color | 'random';
 
-const inputClass =
-  'h-10 w-full rounded-xl border border-line bg-surface px-3 text-sm text-fg outline-none focus:border-accent-soft';
+/** Profile picker for one side; `allowGuest` adds a Guest entry with a free name. */
+function PlayerPicker({
+  label,
+  profiles,
+  value,
+  onChange,
+  allowGuest,
+  guestName,
+  onGuestName,
+}: {
+  label: string;
+  profiles: Profile[];
+  value: string;
+  onChange: (id: string) => void;
+  allowGuest?: boolean;
+  guestName?: string;
+  onGuestName?: (name: string) => void;
+}) {
+  const selected = profiles.find((p) => p.id === value);
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1 text-xs text-muted">
+        {label}
+        <div className="flex items-center gap-3">
+          {selected ? (
+            <Avatar id={selected.avatarId} size={40} className="rounded-xl" />
+          ) : (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-sm font-bold text-muted">
+              ?
+            </div>
+          )}
+          <select
+            className={cx(inputClass, 'cursor-pointer')}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · Lv {p.level}
+              </option>
+            ))}
+            {allowGuest && <option value={GUEST}>Guest (no XP)</option>}
+          </select>
+          {selected && <LevelBadge level={selected.level} />}
+        </div>
+      </label>
+      {!selected && onGuestName && (
+        <input
+          className={inputClass}
+          value={guestName}
+          maxLength={NAME_MAX}
+          aria-label={`${label} guest name`}
+          placeholder="Guest name"
+          onChange={(e) => onGuestName(e.target.value)}
+        />
+      )}
+    </div>
+  );
+}
 
 function NumberField({
   label,
@@ -47,12 +117,16 @@ function NumberField({
 export function SetupScreen() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const profileName = useSession((s) => s.profile.name);
+  const profiles = useProfiles((s) => s.profiles);
+  const setActive = useProfiles((s) => s.setActive);
+  const active = useActiveProfile();
   const savedGame = useSession((s) => s.savedGame);
   const newGame = useGameStore((s) => s.newGame);
 
   const [mode, setMode] = useState<Mode>(params.get('mode') === 'pvai' ? 'pvai' : 'pvp');
-  const [nameA, setNameA] = useState(profileName);
+  const [slotA, setSlotA] = useState(active?.id ?? GUEST);
+  const [slotB, setSlotB] = useState(GUEST);
+  const [nameA, setNameA] = useState('Player 1');
   const [nameB, setNameB] = useState('Guest');
   const [white, setWhite] = useState<WhiteChoice>('a');
   const [tcId, setTcId] = useState('10+0');
@@ -71,12 +145,21 @@ export function SetupScreen() {
       ? customTimeControl(customMin, customInc)
       : { id: preset.id, initialMs: preset.initialMs, incrementMs: preset.incrementMs };
 
-  const clean = (s: string, fallback: string) => s.trim().slice(0, 24) || fallback;
+  const clean = (s: string, fallback: string) => cleanName(s) || fallback;
+  const profileById = (id: string) => profiles.find((p) => p.id === id);
+  const player = (slot: string, guestName: string, fallback: string): PlayerInfo => {
+    const p = profileById(slot);
+    return p ? { name: p.name, profileId: p.id } : { name: clean(guestName, fallback) };
+  };
+  const labelOf = (slot: string, guestName: string, fallback: string) =>
+    player(slot, guestName, fallback).name;
 
   const start = () => {
-    const a = { name: clean(nameA, 'Player 1') };
     let settings: GameSettings;
     if (mode === 'pvai') {
+      const a: PlayerInfo = active
+        ? { name: active.name, profileId: active.id }
+        : { name: 'Player' };
       const human: Color = humanColor === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : humanColor;
       const computer = { name: aiPlayerName(difficulty) };
       settings = {
@@ -89,7 +172,8 @@ export function SetupScreen() {
         assists: assistsAllowed && assists,
       };
     } else {
-      const b = { name: clean(nameB, 'Player 2') };
+      const a = player(slotA, nameA, 'Player 1');
+      const b = player(slotB, nameB, 'Player 2');
       const aIsWhite = white === 'random' ? Math.random() < 0.5 : white === 'a';
       settings = {
         mode: 'pvp',
@@ -101,6 +185,34 @@ export function SetupScreen() {
     newGame(settings);
     navigate('/game');
   };
+
+  const xpPreview = (() => {
+    if (mode === 'pvai') {
+      if (!active) return 'Create a profile to earn XP';
+      const xp = AI_XP[difficulty];
+      return `Win = +${xp.win} XP · Draw +${xp.draw} · Loss +${xp.loss}${assistsAllowed && assists ? ' · hints cost XP' : ''}`;
+    }
+    const a = profileById(slotA);
+    const b = profileById(slotB);
+    if (!a && !b) return 'Guests don’t earn XP';
+    if (a && b && a.id === b.id) return 'Same profile on both sides — no XP';
+    const today = localDay(new Date());
+    const winXp = (me: Profile, opp: Profile | undefined) => {
+      const entry = me.pvpToday[opp?.id ?? GUEST];
+      return pvpAward({
+        outcome: 'win',
+        reason: 'checkmate',
+        moves: PVP_RULES.minMoves,
+        sameProfile: false,
+        gamesTodayBefore: entry?.date === today ? entry.count : 0,
+        levelGap: opp ? me.level - opp.level : null,
+      }).total;
+    };
+    const parts = [a && `${a.name} +${winXp(a, b)}`, b && `${b.name} +${winXp(b, a)}`].filter(
+      Boolean,
+    );
+    return `Win = ${parts.join(' · ')} XP (from move ${PVP_RULES.minMoves})`;
+  })();
 
   const timeControlCard = (
     <Card className="flex flex-col gap-4">
@@ -144,11 +256,16 @@ export function SetupScreen() {
         </div>
       )}
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-4">
-        <p className="text-xs text-muted">
-          {mode === 'pvai'
-            ? `${DIFFICULTIES[difficulty].label} · you play ${humanColor === 'random' ? 'a random side' : humanColor === 'w' ? 'White' : 'Black'}`
-            : 'Local games award XP once profiles arrive.'}
-        </p>
+        <div className="text-xs text-muted">
+          <div>
+            {mode === 'pvai'
+              ? `${DIFFICULTIES[difficulty].label} · you play ${humanColor === 'random' ? 'a random side' : humanColor === 'w' ? 'White' : 'Black'}`
+              : `${labelOf(slotA, nameA, 'Player 1')} vs ${labelOf(slotB, nameB, 'Player 2')}`}
+          </div>
+          <div className="mt-0.5 font-semibold text-accent-text" data-xp-preview>
+            {xpPreview}
+          </div>
+        </div>
         <Button
           variant="primary"
           size="lg"
@@ -197,15 +314,14 @@ export function SetupScreen() {
                 </button>
               ))}
             </div>
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Your name
-              <input
-                className={inputClass}
-                value={nameA}
-                maxLength={24}
-                onChange={(e) => setNameA(e.target.value)}
+            {profiles.length > 0 && active && (
+              <PlayerPicker
+                label="You"
+                profiles={profiles}
+                value={active.id}
+                onChange={setActive}
               />
-            </label>
+            )}
             <div>
               <div className="mb-2 text-xs text-muted">You play</div>
               <Tabs<ColorChoice>
@@ -237,31 +353,31 @@ export function SetupScreen() {
         <div className="grid grid-cols-2 gap-4">
           <Card className="flex flex-col gap-4">
             <CardTitle>Players</CardTitle>
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Player 1
-              <input
-                className={inputClass}
-                value={nameA}
-                maxLength={24}
-                onChange={(e) => setNameA(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Player 2
-              <input
-                className={inputClass}
-                value={nameB}
-                maxLength={24}
-                onChange={(e) => setNameB(e.target.value)}
-              />
-            </label>
+            <PlayerPicker
+              label="Player 1"
+              profiles={profiles}
+              value={slotA}
+              onChange={setSlotA}
+              allowGuest
+              guestName={nameA}
+              onGuestName={setNameA}
+            />
+            <PlayerPicker
+              label="Player 2"
+              profiles={profiles}
+              value={slotB}
+              onChange={setSlotB}
+              allowGuest
+              guestName={nameB}
+              onGuestName={setNameB}
+            />
             <div>
               <div className="mb-2 text-xs text-muted">Who plays White?</div>
               <Tabs<WhiteChoice>
                 label="Who plays White"
                 items={[
-                  { id: 'a', label: clean(nameA, 'Player 1') },
-                  { id: 'b', label: clean(nameB, 'Player 2') },
+                  { id: 'a', label: labelOf(slotA, nameA, 'Player 1') },
+                  { id: 'b', label: labelOf(slotB, nameB, 'Player 2') },
                   { id: 'random', label: 'Random' },
                 ]}
                 value={white}

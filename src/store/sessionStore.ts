@@ -1,13 +1,12 @@
 import { create } from 'zustand';
 import type { SavedGame } from '@shared/types';
 import { setGamePersistence, useGameStore } from './gameStore';
+import { setProfilePersistence, useProfiles } from './profileStore';
 import { toast } from './toastStore';
 
 interface SessionState {
   /** Saved in-progress game on disk, if any. */
   savedGame: SavedGame | null;
-  /** Placeholder local profile until multi-profile support lands. */
-  profile: { name: string; avatarId: string; level: number; xp: number; xpToNext: number };
   refreshSavedGame(): Promise<void>;
   /** Load the saved game into the game store. Returns false (and toasts) if unusable. */
   continueSavedGame(): Promise<boolean>;
@@ -17,7 +16,6 @@ const CORRUPT_MESSAGE = 'Your saved game could not be read and was discarded.';
 
 export const useSession = create<SessionState>()((set, get) => ({
   savedGame: null,
-  profile: { name: 'Player', avatarId: 'knight-indigo', level: 1, xp: 0, xpToNext: 100 },
 
   async refreshSavedGame() {
     const res = await window.chessArena.storage.getSavedGame();
@@ -56,4 +54,20 @@ export function wireGamePersistence(): void {
       void window.chessArena.storage.clearSavedGame();
     },
   });
+}
+
+/** Connect profiles and match history to the main process, and load the profiles. */
+export async function loadProfiles(): Promise<void> {
+  setProfilePersistence({
+    saveProfiles: (doc) => {
+      void window.chessArena.storage.setProfiles(doc).catch((err) => {
+        console.error(err);
+        toast('Your profile could not be saved.', 'error');
+      });
+    },
+    addRecord: (record) => {
+      void window.chessArena.storage.addGameRecord(record).catch((err) => console.error(err));
+    },
+  });
+  useProfiles.getState().hydrate(await window.chessArena.storage.getProfiles());
 }

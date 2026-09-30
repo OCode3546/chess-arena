@@ -3,8 +3,10 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/app/TitleBar';
 import { Avatar, LevelBadge } from '@/components/Avatar';
-import { Button, ProgressBar } from '@/components/ui';
+import { Button } from '@/components/ui';
+import { XpBar } from '@/components/XpBar';
 import { describeTimeControl } from '@/config/timeControls';
+import { useActiveProfile, useProfiles } from '@/store/profileStore';
 import { useSession } from '@/store/sessionStore';
 
 const item = {
@@ -124,7 +126,8 @@ const I = {
 
 export function HomeScreen() {
   const navigate = useNavigate();
-  const profile = useSession((s) => s.profile);
+  const profile = useActiveProfile();
+  const profileCount = useProfiles((s) => s.profiles.length);
   const savedGame = useSession((s) => s.savedGame);
   const continueSavedGame = useSession((s) => s.continueSavedGame);
 
@@ -196,29 +199,36 @@ export function HomeScreen() {
 
         {/* Right: player card + secondary nav */}
         <div className="flex flex-col gap-4">
-          <motion.div variants={item} className="glass rounded-3xl p-6">
-            <div className="flex items-center gap-4">
-              <Avatar id={profile.avatarId} size={64} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-display text-xl font-bold">{profile.name}</span>
-                  <LevelBadge level={profile.level} />
+          <motion.button
+            variants={item}
+            type="button"
+            onClick={() => navigate('/profile')}
+            aria-label="Open profile"
+            className="glass cursor-pointer rounded-3xl p-6 text-left transition-colors hover:bg-surface-2"
+          >
+            {profile ? (
+              <>
+                <div className="flex items-center gap-4">
+                  <Avatar id={profile.avatarId} size={64} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-display text-xl font-bold">
+                        {profile.name}
+                      </span>
+                      <LevelBadge level={profile.level} />
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted">
+                      {profile.xp.toLocaleString()} XP total
+                      {profileCount > 1 && ' · switch profile'}
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-0.5 text-xs text-muted">Novice</div>
-              </div>
-            </div>
-            <div className="mt-5 flex items-baseline justify-between text-xs">
-              <span className="font-semibold text-muted">Experience</span>
-              <span className="tabular-nums text-muted">
-                {profile.xp} / {profile.xpToNext} XP
-              </span>
-            </div>
-            <ProgressBar
-              className="mt-2"
-              value={profile.xp / profile.xpToNext}
-              label="Experience to next level"
-            />
-          </motion.div>
+                <XpBar xp={profile.xp} className="mt-5" />
+              </>
+            ) : (
+              <div className="text-sm text-muted">Create a profile to start earning XP.</div>
+            )}
+          </motion.button>
 
           <div className="grid grid-cols-2 gap-3">
             <NavTile label="Profile" hint="Stats & achievements" to="/profile" icon={I.profile} />

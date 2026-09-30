@@ -1,15 +1,5 @@
 import { ComingSoon, ScreenShell } from '@/components/ScreenShell';
 
-export function ProfileScreen() {
-  return (
-    <ScreenShell id="profile" title="Profile" subtitle="Your level, stats and achievements">
-      <ComingSoon phase="Phase 5">
-        Multiple local profiles, stats and achievements arrive with the XP system.
-      </ComingSoon>
-    </ScreenShell>
-  );
-}
-
 export function RewardsScreen() {
   return (
     <ScreenShell id="rewards" title="Rewards" subtitle="Everything you unlock from level 1 to 50">

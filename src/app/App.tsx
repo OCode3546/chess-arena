@@ -6,19 +6,17 @@ import { Button, Modal, ToastHost } from '@/components/ui';
 import { AboutScreen } from '@/screens/AboutScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
-import {
-  HistoryScreen,
-  ProfileScreen,
-  RewardsScreen,
-  TutorialScreen,
-} from '@/screens/Placeholders';
+import { HistoryScreen, RewardsScreen, TutorialScreen } from '@/screens/Placeholders';
+import { ProfileScreen } from '@/screens/ProfileScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { SetupScreen } from '@/screens/SetupScreen';
 import { SplashScreen } from '@/screens/SplashScreen';
 import { useGameStore } from '@/store/gameStore';
-import { useSession, wireGamePersistence } from '@/store/sessionStore';
+import { useProfiles, wireProgression } from '@/store/profileStore';
+import { loadProfiles, useSession, wireGamePersistence } from '@/store/sessionStore';
 import { useSettings } from '@/store/settingsStore';
 import { toast } from '@/store/toastStore';
+import { FirstRunModal } from './FirstRunModal';
 import { TitleBar } from './TitleBar';
 
 const SPLASH_MIN_MS = 700;
@@ -34,10 +32,12 @@ export function App() {
   const [ready, setReady] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const { theme, accent, animations } = useSettings((s) => s.settings);
+  const firstRun = useProfiles((s) => s.loaded && s.profiles.length === 0);
 
   // Boot: settings, storage health, saved game, engine.
   useEffect(() => {
     wireGamePersistence();
+    const offProgression = wireProgression();
     const started = Date.now();
     const offBackend = aiEngine.onBackendChange((backend) => {
       document.documentElement.dataset.engine = backend;
@@ -53,6 +53,11 @@ export function App() {
         const issues = await window.chessArena.app.getStartupIssues();
         if (issues.includes('settings'))
           toast('Your settings file was damaged and has been reset.', 'warning');
+        if (issues.includes('profiles'))
+          toast('Your profiles file was damaged and could not be read.', 'error');
+        if (issues.includes('history'))
+          toast('Your game history file was damaged and has been reset.', 'warning');
+        await loadProfiles();
         await useSession.getState().refreshSavedGame();
       } catch (err) {
         console.error(err);
@@ -61,7 +66,10 @@ export function App() {
       await engineReady;
       window.setTimeout(() => setReady(true), Math.max(0, SPLASH_MIN_MS - (Date.now() - started)));
     })();
-    return offBackend;
+    return () => {
+      offBackend();
+      offProgression();
+    };
   }, []);
 
   // Theme tokens live on <html>.
@@ -125,6 +133,7 @@ export function App() {
           </AnimatePresence>
         </main>
         <ToastHost />
+        <FirstRunModal open={ready && firstRun} />
         <Modal
           open={confirmClose}
           title="Quit Chess Arena?"

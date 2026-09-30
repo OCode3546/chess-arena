@@ -1,6 +1,7 @@
 // Launches the built app hidden and checks renderer isolation, routing, that the
-// theme setting survives a relaunch, and that the AI opponent plays on every engine
-// backend (native, WASM, minimax) without leaving engine processes behind.
+// theme setting survives a relaunch, that the AI opponent plays on every engine
+// backend (native, WASM, minimax) without leaving engine processes behind, and the
+// profile → game → XP → level-up flow across relaunches.
 // Run via `npm run verify:sandbox`.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -87,6 +88,98 @@ function aiRun(extraEnv) {
   }).steps?.[0];
 }
 
+const HELPERS = `
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const byText = (t) =>
+    [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(t));
+  const waitFor = async (pred, ms) => {
+    for (let t = 0; t < ms; t += 100) { if (pred()) return true; await sleep(100); }
+    return false;
+  };
+`;
+
+// Launch 1: create a profile through the first-run dialog, then seed it with 80 XP.
+const PROFILE_CREATE = `(async () => {
+  ${HELPERS}
+  const dialog = document.querySelector('[role=dialog]');
+  const firstRun = !!dialog && dialog.textContent.includes('Welcome to Chess Arena');
+  const input = dialog?.querySelector('input');
+  if (input) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Smokey');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  await sleep(100);
+  byText('Create profile')?.click();
+  await sleep(500);
+  const doc = await window.chessArena.storage.getProfiles();
+  const p = doc.profiles[0];
+  await window.chessArena.storage.setProfiles({ ...doc, profiles: [{ ...p, xp: 80 }] });
+  return { firstRun, created: doc.profiles.length === 1 && p.name === 'Smokey' };
+})()`;
+
+// Launch 2: Smokey (White) beats a guest after 10+ moves and levels up to 2.
+const PROFILE_GAME = `(async () => {
+  ${HELPERS}
+  const noFirstRun = !document.body.textContent.includes('Welcome to Chess Arena');
+  const homeShowsProfile = document.body.textContent.includes('Smokey');
+  location.hash = '#/setup?mode=pvp';
+  await sleep(600);
+  const preview = document.querySelector('[data-xp-preview]')?.textContent ?? '';
+  byText('Untimed').click();
+  await sleep(100);
+  byText('Start Game').click();
+  await sleep(600);
+  const board = document.querySelector('[role=application]');
+  const click = (sq) => {
+    const r = board.getBoundingClientRect();
+    const col = sq.charCodeAt(0) - 97;
+    const row = 8 - Number(sq[1]);
+    const o = { bubbles: true, clientX: r.left + (col + 0.5) * (r.width / 8),
+      clientY: r.top + (row + 0.5) * (r.height / 8), button: 0, pointerId: 1, isPrimary: true };
+    board.dispatchEvent(new PointerEvent('pointerdown', o));
+    board.dispatchEvent(new PointerEvent('pointerup', o));
+  };
+  const line = 'e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d3 d7d6 e1g1 e8g8 h2h3 h7h6 a2a4 a7a5 f1e1 f8e8 b1d2 c8e6 d2f1';
+  for (const m of line.split(' ')) {
+    click(m.slice(0, 2)); await sleep(60);
+    click(m.slice(2)); await sleep(260);
+  }
+  byText('⚑ Resign').click();
+  await sleep(300);
+  byText('Resign as Black').click();
+  const awarded = await waitFor(() => !!document.querySelector('[data-xp-award]'), 3000);
+  const levelUp = await waitFor(() => !!document.querySelector('[data-level-up]'), 4000);
+  const awardText = () => document.querySelector('[data-xp-award]')?.textContent ?? '';
+  await waitFor(() => awardText().includes('+60 XP'), 4000);
+  const award = awardText();
+  return { noFirstRun, homeShowsProfile, preview, awarded, levelUp, award };
+})()`;
+
+// Launch 3: XP, level, stats and history survived the relaunch.
+const PROFILE_CHECK = `(async () => {
+  ${HELPERS}
+  const doc = await window.chessArena.storage.getProfiles();
+  const history = await window.chessArena.storage.getHistory();
+  location.hash = '#/profile';
+  await sleep(600);
+  return {
+    profile: doc.profiles[0] && { xp: doc.profiles[0].xp, level: doc.profiles[0].level,
+      wins: doc.profiles[0].stats.wins },
+    history: history.map((g) => ({ result: g.result, moves: g.moves, xp: Object.values(g.xpAwarded) })),
+    profileScreen: document.querySelector('[data-profile-name]')?.textContent,
+  };
+})()`;
+
+function stepsRun(userData, steps) {
+  const file = join(tempDir('chess-arena-steps-'), 'steps.json');
+  writeFileSync(file, JSON.stringify(steps));
+  return run('', {
+    CHESS_ARENA_USER_DATA: userData,
+    CHESS_ARENA_SMOKE_SKIP_ROUTES: '1',
+    CHESS_ARENA_SMOKE_STEPS: file,
+  }).steps;
+}
+
 function engineProcesses() {
   if (process.platform === 'win32') {
     const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq stockfish*'], { encoding: 'utf8' });
@@ -140,6 +233,44 @@ try {
     before,
     after: engineProcesses(),
   });
+
+  const profileData = tempDir('chess-arena-profile-');
+  const [created] = stepsRun(profileData, [{ js: PROFILE_CREATE }]);
+  check('first run asks for a profile', created?.firstRun === true);
+  check('profile created from the first-run dialog', created?.created === true);
+  const [played] = stepsRun(profileData, [
+    { shot: 'home' },
+    { js: PROFILE_GAME },
+    { shot: 'game-over-level-up', wait: 2500 },
+    { shot: 'game-over' },
+  ]);
+  check(
+    'profile persisted across relaunch',
+    played?.homeShowsProfile === true && played?.noFirstRun,
+  );
+  check(
+    'setup shows an XP preview',
+    /Win = Smokey \+60/.test(played?.preview ?? ''),
+    played?.preview,
+  );
+  check(
+    'game over shows the XP breakdown',
+    played?.awarded === true && /\+60 XP/.test(played?.award),
+  );
+  check('level-up celebration shown', played?.levelUp === true);
+  const [after] = stepsRun(profileData, [{ js: PROFILE_CHECK }, { shot: 'profile' }]);
+  check(
+    'XP and level saved',
+    after?.profile?.xp === 140 && after?.profile?.level === 2,
+    after?.profile,
+  );
+  check('win counted in stats', after?.profile?.wins === 1);
+  check(
+    'match saved to history',
+    JSON.stringify(after?.history) === JSON.stringify([{ result: '1-0', moves: 11, xp: [60] }]),
+    after?.history,
+  );
+  check('profile screen renders', after?.profileScreen === 'Smokey');
 } finally {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }

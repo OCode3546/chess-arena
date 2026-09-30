@@ -13,11 +13,15 @@ import type { EngineStatus, WindowState } from '@shared/types';
 import { isSearchRequest } from '@shared/validate';
 import { NativeEngine, type NativeEngineStatus } from './engine';
 import {
+  addGameRecord,
   clearSavedGame,
+  getHistory,
+  getProfiles,
   getSavedGame,
   getSettings,
   getStartupIssues,
   initStorage,
+  setProfiles,
   setSavedGame,
   setSettings,
 } from './storage';
@@ -236,6 +240,10 @@ function registerIpc(): void {
   handle(IPC.savedGameGet, () => getSavedGame());
   handle(IPC.savedGameSet, (game: unknown) => setSavedGame(game));
   handle(IPC.savedGameClear, () => clearSavedGame());
+  handle(IPC.profilesGet, () => getProfiles());
+  handle(IPC.profilesSet, (doc: unknown) => setProfiles(doc));
+  handle(IPC.historyGet, () => getHistory());
+  handle(IPC.historyAdd, (record: unknown) => addGameRecord(record));
 
   handle(IPC.engineStart, async (): Promise<EngineStatus> => {
     const status: NativeEngineStatus = engine

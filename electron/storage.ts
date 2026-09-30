@@ -3,8 +3,21 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import Store from 'electron-store';
 import { migrate, type Migration } from '@shared/migrate';
-import { DEFAULT_SETTINGS, type LoadResult, type SavedGame, type Settings } from '@shared/types';
-import { isSavedGame, sanitizeSettings } from '@shared/validate';
+import {
+  DEFAULT_SETTINGS,
+  type GameRecord,
+  type LoadResult,
+  type ProfilesDoc,
+  type SavedGame,
+  type Settings,
+} from '@shared/types';
+import {
+  isGameRecord,
+  isSavedGame,
+  MAX_HISTORY,
+  sanitizeProfilesDoc,
+  sanitizeSettings,
+} from '@shared/validate';
 
 const SCHEMA_VERSION = 1;
 
@@ -15,12 +28,20 @@ const settingsMigrations: Record<number, Migration> = {
 const saveMigrations: Record<number, Migration> = {
   1: (d) => ({ ...d, game: d.game ?? null }),
 };
+const profileMigrations: Record<number, Migration> = {
+  1: (d) => ({ ...d, ...sanitizeProfilesDoc(d) }),
+};
+const historyMigrations: Record<number, Migration> = {
+  1: (d) => ({ ...d, games: Array.isArray(d.games) ? d.games.filter(isGameRecord) : [] }),
+};
 
 type Doc = Record<string, unknown>;
 
 const startupIssues: string[] = [];
 let settingsStore: Store<Doc>;
 let saveStore: Store<Doc>;
+let profileStore: Store<Doc>;
+let historyStore: Store<Doc>;
 /** Set when the save file was unreadable; reported once to the renderer. */
 let saveCorrupt = false;
 
@@ -49,6 +70,8 @@ function openStore(name: string, migrations: Record<number, Migration>): Store<D
 export function initStorage(): void {
   settingsStore = openStore('settings', settingsMigrations);
   saveStore = openStore('savegame', saveMigrations);
+  profileStore = openStore('profiles', profileMigrations);
+  historyStore = openStore('history', historyMigrations);
   if (startupIssues.includes('savegame')) saveCorrupt = true;
 }
 
@@ -88,4 +111,28 @@ export function setSavedGame(game: unknown): boolean {
 
 export function clearSavedGame(): void {
   saveStore.set('game', null);
+}
+
+export function getProfiles(): ProfilesDoc {
+  return sanitizeProfilesDoc(profileStore.store);
+}
+
+export function setProfiles(doc: unknown): ProfilesDoc {
+  const next = sanitizeProfilesDoc(doc);
+  profileStore.set('activeId', next.activeId);
+  profileStore.set('profiles', next.profiles);
+  return next;
+}
+
+/** Finished games, newest first; unreadable entries are skipped. */
+export function getHistory(): GameRecord[] {
+  const games = historyStore.get('games');
+  return Array.isArray(games) ? games.filter(isGameRecord) : [];
+}
+
+export function addGameRecord(record: unknown): boolean {
+  if (!isGameRecord(record)) return false;
+  const games = getHistory().filter((g) => g.id !== record.id);
+  historyStore.set('games', [record, ...games].slice(0, MAX_HISTORY));
+  return true;
 }

@@ -30,6 +30,10 @@ const api: ChessArenaApi = {
     getSavedGame: () => ipcRenderer.invoke(IPC.savedGameGet),
     setSavedGame: (game) => ipcRenderer.invoke(IPC.savedGameSet, game),
     clearSavedGame: () => ipcRenderer.invoke(IPC.savedGameClear),
+    getProfiles: () => ipcRenderer.invoke(IPC.profilesGet),
+    setProfiles: (doc) => ipcRenderer.invoke(IPC.profilesSet, doc),
+    getHistory: () => ipcRenderer.invoke(IPC.historyGet),
+    addGameRecord: (record) => ipcRenderer.invoke(IPC.historyAdd, record),
   },
   engine: {
     start: () => ipcRenderer.invoke(IPC.engineStart),

@@ -21,6 +21,14 @@ const validSave = {
 describe('saved game validation', () => {
   it('accepts a well-formed save', () => {
     expect(isSavedGame(validSave)).toBe(true);
+    const withProfile = {
+      ...validSave,
+      settings: {
+        ...validSave.settings,
+        players: { w: { name: 'A', profileId: 'b2c1-9f' }, b: { name: 'B' } },
+      },
+    };
+    expect(isSavedGame(withProfile)).toBe(true);
   });
 
   it.each([
@@ -32,6 +40,16 @@ describe('saved game validation', () => {
     ['bad mode', { ...validSave, settings: { ...validSave.settings, mode: 'online' } }],
     ['missing players', { ...validSave, settings: { ...validSave.settings, players: {} } }],
     ['bad date', { ...validSave, startedAt: 'yesterday' }],
+    [
+      'bad profile id',
+      {
+        ...validSave,
+        settings: {
+          ...validSave.settings,
+          players: { w: { name: 'A', profileId: '../x' }, b: { name: 'B' } },
+        },
+      },
+    ],
   ])('rejects %s', (_n, value) => {
     expect(isSavedGame(value)).toBe(false);
   });

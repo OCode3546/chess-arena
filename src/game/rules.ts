@@ -1,5 +1,7 @@
 import { Chess, type PieceSymbol, type Square } from 'chess.js';
-import type { Color } from '@shared/types';
+import type { Color, ResultCode } from '@shared/types';
+
+export type { ResultCode };
 
 export const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -13,8 +15,6 @@ export type EndReason =
   | 'agreement'
   | 'timeout'
   | 'timeout-insufficient';
-
-export type ResultCode = '1-0' | '0-1' | '1/2-1/2';
 
 export interface GameResult {
   result: ResultCode;

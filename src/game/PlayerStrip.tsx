@@ -3,7 +3,10 @@ import { useMemo } from 'react';
 import type { Color } from '@shared/types';
 import { pieceUrl } from '@/config/pieces';
 import { useAiUi } from '@/ai/useAiOpponent';
+import { Avatar, LevelBadge } from '@/components/Avatar';
+import { XpBar } from '@/components/XpBar';
 import { aiColorOf, useGameStore } from '@/store/gameStore';
+import { useProfile } from '@/store/profileStore';
 import { useSettings } from '@/store/settingsStore';
 import { cx, formatClock } from '@/utils/format';
 import { capturedPieces } from './pieceIds';
@@ -40,6 +43,7 @@ function Clock({ color }: { color: Color }) {
 
 export function PlayerStrip({ color, compact }: { color: Color; compact?: boolean }) {
   const name = useGameStore((s) => s.settings?.players[color].name ?? '');
+  const profile = useProfile(useGameStore((s) => s.settings?.players[color].profileId));
   const history = useGameStore((s) => s.history);
   const viewPly = useGameStore((s) => s.viewPly);
   const toMove = useGameStore((s) => s.status === 'playing' && s.fen.split(' ')[1] === color);
@@ -70,16 +74,28 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
       )}
     >
       <div className="flex items-center gap-3">
-        <div
-          className={cx(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-line',
-            color === 'w' ? 'bg-[#f3f4f8]' : 'bg-[#1d2030]',
-          )}
-        >
-          <img src={pieceUrl(pieceSet, color, 'k')} alt="" className="h-8 w-8" draggable={false} />
-        </div>
+        {profile ? (
+          <Avatar id={profile.avatarId} size={44} className="rounded-xl" />
+        ) : (
+          <div
+            className={cx(
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-line',
+              color === 'w' ? 'bg-[#f3f4f8]' : 'bg-[#1d2030]',
+            )}
+          >
+            <img
+              src={pieceUrl(pieceSet, color, 'k')}
+              alt=""
+              className="h-8 w-8"
+              draggable={false}
+            />
+          </div>
+        )}
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold">{name}</div>
+          <div className="flex items-center gap-2">
+            <span className="truncate font-semibold">{name}</span>
+            {profile && <LevelBadge level={profile.level} className="h-5 px-2 text-[11px]" />}
+          </div>
           <div className="text-xs text-muted" aria-live={isAi ? 'polite' : undefined}>
             {color === 'w' ? 'White' : 'Black'}
             {isAi && ' · Computer'}
@@ -92,6 +108,7 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
         </div>
         {!compact && <Clock color={color} />}
       </div>
+      {profile && <XpBar xp={profile.xp} size="sm" showLabel={false} />}
       <div
         className="flex min-h-6 items-center gap-0.5"
         aria-label={`Pieces captured by ${color === 'w' ? 'White' : 'Black'}`}
