@@ -9,6 +9,7 @@
 | Inter                         | The Inter Project Authors         | SIL OFL 1.1 (`LICENSES/Inter-OFL-1.1.txt`)          | https://github.com/rsms/inter                                         |
 | Space Grotesk                 | The Space Grotesk Project Authors | SIL OFL 1.1 (`LICENSES/SpaceGrotesk-OFL-1.1.txt`)   | https://github.com/floriankarsten/space-grotesk                       |
 | Sound effects                 | Chess Arena                       | Part of the app                                     | Synthesised at runtime with Web Audio (`src/audio/sfx.ts`)            |
+| Developer                  | Orville Arrindell                      | CodeGorilla                                   | https://github.com/OCode3546
 
 ## Chess engine
 
