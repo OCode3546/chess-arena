@@ -1,0 +1,131 @@
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Button, Modal, ToastHost } from '@/components/ui';
+import { AboutScreen } from '@/screens/AboutScreen';
+import { GameScreen } from '@/screens/GameScreen';
+import { HomeScreen } from '@/screens/HomeScreen';
+import {
+  HistoryScreen,
+  ProfileScreen,
+  RewardsScreen,
+  TutorialScreen,
+} from '@/screens/Placeholders';
+import { SettingsScreen } from '@/screens/SettingsScreen';
+import { SetupScreen } from '@/screens/SetupScreen';
+import { SplashScreen } from '@/screens/SplashScreen';
+import { useGameStore } from '@/store/gameStore';
+import { useSession, wireGamePersistence } from '@/store/sessionStore';
+import { useSettings } from '@/store/settingsStore';
+import { toast } from '@/store/toastStore';
+import { TitleBar } from './TitleBar';
+
+const SPLASH_MIN_MS = 700;
+
+export function App() {
+  const [ready, setReady] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const { theme, accent, animations } = useSettings((s) => s.settings);
+
+  // Boot: settings, storage health, saved game.
+  useEffect(() => {
+    wireGamePersistence();
+    const started = Date.now();
+    void (async () => {
+      try {
+        await useSettings.getState().load();
+        const issues = await window.chessArena.app.getStartupIssues();
+        if (issues.includes('settings'))
+          toast('Your settings file was damaged and has been reset.', 'warning');
+        await useSession.getState().refreshSavedGame();
+      } catch (err) {
+        console.error(err);
+        toast('Some saved data could not be loaded.', 'error');
+      }
+      window.setTimeout(() => setReady(true), Math.max(0, SPLASH_MIN_MS - (Date.now() - started)));
+    })();
+  }, []);
+
+  // Theme tokens live on <html>.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.dataset.accent = accent;
+    root.dataset.motion = animations ? 'on' : 'off';
+  }, [theme, accent, animations]);
+
+  // Window close: auto-save and ask when a game is running.
+  useEffect(() => {
+    return window.chessArena.window.onCloseRequested(() => {
+      const game = useGameStore.getState();
+      if (game.status === 'playing') {
+        game.persist(Date.now());
+        if (!game.paused) game.setPaused(true);
+        setConfirmClose(true);
+      } else {
+        window.chessArena.window.confirmClose();
+      }
+    });
+  }, []);
+
+  const saveAndQuit = () => {
+    useGameStore.getState().persist();
+    window.chessArena.window.confirmClose();
+  };
+
+  return (
+    <MotionConfig reducedMotion={animations ? 'user' : 'always'}>
+      <div data-app-root className="app-bg flex h-full flex-col text-fg">
+        <TitleBar />
+        <main className="relative min-h-0 flex-1">
+          <AnimatePresence mode="wait">
+            {!ready ? (
+              <SplashScreen key="splash" />
+            ) : (
+              <motion.div
+                key="app"
+                className="h-full"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <HashRouter>
+                  <Routes>
+                    <Route path="/" element={<HomeScreen />} />
+                    <Route path="/setup" element={<SetupScreen />} />
+                    <Route path="/game" element={<GameScreen />} />
+                    <Route path="/profile" element={<ProfileScreen />} />
+                    <Route path="/rewards" element={<RewardsScreen />} />
+                    <Route path="/history" element={<HistoryScreen />} />
+                    <Route path="/settings" element={<SettingsScreen />} />
+                    <Route path="/tutorial" element={<TutorialScreen />} />
+                    <Route path="/about" element={<AboutScreen />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </HashRouter>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </main>
+        <ToastHost />
+        <Modal
+          open={confirmClose}
+          title="Quit Chess Arena?"
+          onClose={() => setConfirmClose(false)}
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmClose(false)} data-autofocus>
+                Keep playing
+              </Button>
+              <Button variant="primary" onClick={saveAndQuit}>
+                Save &amp; quit
+              </Button>
+            </>
+          }
+        >
+          Your game is in progress. It has been saved — you can pick it up later with{' '}
+          <b>Continue Game</b>.
+        </Modal>
+      </div>
+    </MotionConfig>
+  );
+}

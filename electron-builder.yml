@@ -1,0 +1,31 @@
+# Packaging config (stub — completed in Phase 8: signing, auto-update, engine unpacking).
+appId: com.chessarena.app
+productName: Chess Arena
+copyright: Copyright © 2026 Chess Arena
+directories:
+  buildResources: build
+  output: release/${version}
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+extraResources:
+  - from: LICENSES
+    to: LICENSES
+    filter: ['**/*']
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Chess Arena
+  artifactName: ChessArena-Setup-${version}.${ext}
+portable:
+  artifactName: ChessArena-${version}-portable.${ext}
