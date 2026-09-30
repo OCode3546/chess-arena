@@ -1,7 +1,8 @@
 // Launches the built app hidden and checks renderer isolation, routing, that the
 // theme setting survives a relaunch, that the AI opponent plays on every engine
 // backend (native, WASM, minimax) without leaving engine processes behind, and the
-// profile → game → XP → level-up flow across relaunches.
+// profile → game → XP → level-up flow across relaunches, and that rewards render for all
+// 50 levels and equipped cosmetics apply instantly and survive a relaunch.
 // Run via `npm run verify:sandbox`.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -170,6 +171,81 @@ const PROFILE_CHECK = `(async () => {
   };
 })()`;
 
+// Rewards, launch 1: a level-30 profile.
+const REWARDS_SEED = `(async () => {
+  ${HELPERS}
+  const input = document.querySelector('[role=dialog] input');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Rex');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(100);
+  byText('Create profile').click();
+  await sleep(500);
+  const doc = await window.chessArena.storage.getProfiles();
+  await window.chessArena.storage.setProfiles({ ...doc, profiles: [{ ...doc.profiles[0], xp: 33000 }] });
+  return true;
+})()`;
+
+// Launch 2: the roadmap, then equip a few rewards from it.
+const REWARDS_EQUIP = `(async () => {
+  ${HELPERS}
+  location.hash = '#/rewards';
+  await sleep(800);
+  const card = (key) => document.querySelector('[data-reward="' + key + '"]');
+  const equip = (key) => card(key)?.querySelector('button')?.click();
+  const levels = document.querySelectorAll('[data-level]').length;
+  const reached = document.querySelectorAll('[data-reached]').length;
+  const marbleLocked = !!card('board:marble')?.hasAttribute('data-locked') && !card('board:marble').querySelector('button');
+  for (const key of ['board:neon', 'pieceSet:classic', 'frame:gold', 'title:rook-commander', 'effect:move-trail']) {
+    equip(key);
+    await sleep(80);
+  }
+  await sleep(300);
+  const equipped = [...document.querySelectorAll('[data-reward] button[aria-pressed=true], [data-reward] button:disabled')]
+    .map((b) => b.closest('[data-reward]').dataset.reward).sort();
+  return { levels, reached, marbleLocked, equipped };
+})()`;
+
+// …and they show up in a game at once (board, pieces, frame, title, move trail).
+const REWARDS_GAME = `(async () => {
+  ${HELPERS}
+  location.hash = '#/setup?mode=pvp';
+  await sleep(600);
+  byText('Untimed').click();
+  await sleep(100);
+  byText('Start Game').click();
+  await sleep(700);
+  const board = document.querySelector('[role=application]');
+  const r = board.getBoundingClientRect();
+  const click = (sq) => {
+    const o = { bubbles: true, clientX: r.left + (sq.charCodeAt(0) - 96.5) * (r.width / 8),
+      clientY: r.top + (8.5 - Number(sq[1])) * (r.height / 8), button: 0, pointerId: 1, isPrimary: true };
+    board.dispatchEvent(new PointerEvent('pointerdown', o));
+    board.dispatchEvent(new PointerEvent('pointerup', o));
+  };
+  click('e2'); await sleep(80); click('e4');
+  const trail = await waitFor(() => !!document.querySelector('[data-effect=move-trail]'), 1000);
+  return {
+    board: board.dataset.board,
+    pieceSet: board.dataset.pieceSet,
+    frame: !!document.querySelector('[data-frame=gold]'),
+    title: document.querySelector('[data-title]')?.textContent,
+    trail,
+  };
+})()`;
+
+// Launch 3: still equipped after a relaunch.
+const REWARDS_CHECK = `(async () => {
+  ${HELPERS}
+  const doc = await window.chessArena.storage.getProfiles();
+  location.hash = '#/settings';
+  await sleep(600);
+  const checked = [...document.querySelectorAll('[role=radio][aria-checked=true]')].map((b) => b.getAttribute('aria-label'));
+  location.hash = '#/rewards';
+  await sleep(600);
+  const rewardsEquipped = !!document.querySelector('[data-reward="board:neon"] button:disabled');
+  return { level: doc.profiles[0].level, equipped: doc.profiles[0].equipped, checked, rewardsEquipped };
+})()`;
+
 function stepsRun(userData, steps) {
   const file = join(tempDir('chess-arena-steps-'), 'steps.json');
   writeFileSync(file, JSON.stringify(steps));
@@ -271,6 +347,64 @@ try {
     after?.history,
   );
   check('profile screen renders', after?.profileScreen === 'Smokey');
+
+  const rewardsData = tempDir('chess-arena-rewards-');
+  stepsRun(rewardsData, [{ js: REWARDS_SEED }]);
+  const [roadmap, inGame] = stepsRun(rewardsData, [
+    { js: REWARDS_EQUIP },
+    { shot: 'rewards' },
+    { js: REWARDS_GAME },
+    { shot: 'game-cosmetics' },
+  ]);
+  check('rewards roadmap renders all 50 levels', roadmap?.levels === 50, roadmap?.levels);
+  check('levels 1–30 reached', roadmap?.reached === 30, roadmap?.reached);
+  check('locked rewards cannot be equipped', roadmap?.marbleLocked === true);
+  check(
+    'equipping from the roadmap',
+    JSON.stringify(roadmap?.equipped) ===
+      JSON.stringify(
+        [
+          'board:neon',
+          'pieceSet:classic',
+          'frame:gold',
+          'title:rook-commander',
+          'effect:move-trail',
+          'avatar:knight-indigo',
+        ].sort(),
+      ),
+    roadmap?.equipped,
+  );
+  check(
+    'equipped board and pieces apply in game',
+    inGame?.board === 'neon' && inGame?.pieceSet === 'classic',
+    inGame,
+  );
+  check(
+    'frame and title shown in the player strip',
+    inGame?.frame === true && inGame?.title === 'Rook Commander',
+  );
+  check('move trail effect plays', inGame?.trail === true);
+  const [kept] = stepsRun(rewardsData, [{ js: REWARDS_CHECK }]);
+  check(
+    'equips persisted across relaunch',
+    kept?.level === 30 &&
+      JSON.stringify(kept?.equipped) ===
+        JSON.stringify({
+          board: 'neon',
+          pieceSet: 'classic',
+          frame: 'gold',
+          effects: ['move-trail'],
+          title: 'rook-commander',
+        }),
+    kept,
+  );
+  check(
+    'settings and rewards reflect the equips',
+    kept?.rewardsEquipped === true &&
+      kept?.checked?.includes('Neon') &&
+      kept?.checked?.includes('Classic'),
+    kept?.checked,
+  );
 } finally {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }

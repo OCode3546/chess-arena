@@ -1,15 +1,5 @@
 import { ComingSoon, ScreenShell } from '@/components/ScreenShell';
 
-export function RewardsScreen() {
-  return (
-    <ScreenShell id="rewards" title="Rewards" subtitle="Everything you unlock from level 1 to 50">
-      <ComingSoon phase="Phase 6">
-        The level 1–50 roadmap with boards, titles and frames arrives soon.
-      </ComingSoon>
-    </ScreenShell>
-  );
-}
-
 export function HistoryScreen() {
   return (
     <ScreenShell id="history" title="History" subtitle="Finished games and PGN export">

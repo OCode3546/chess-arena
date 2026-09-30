@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import type { GameRecord, Profile, ProfilesDoc } from '@shared/types';
 import { MAX_PROFILES } from '@shared/validate';
+import { cosmeticsFor, isUnlocked, type Cosmetics, type RewardKind } from '@/config/rewards';
 import { levelForXp } from '@/progression/levels';
 import { newProfile, settleMatch, type PlayerAward } from '@/progression/match';
 import { currentPgn, useGameStore } from './gameStore';
@@ -35,6 +37,11 @@ interface ProfileState {
   update(id: string, patch: Partial<Pick<Profile, 'name' | 'avatarId'>>): void;
   remove(id: string): void;
   setActive(id: string): void;
+  /**
+   * Equip an unlocked item on the active profile; `on: false` takes off a title or effect.
+   * Returns false when there is no active profile or the item is locked.
+   */
+  equip(kind: RewardKind, id: string, on?: boolean): boolean;
   /** Award XP and record the live game once it has ended. Idempotent per game. */
   settleFinishedGame(now?: Date): void;
 }
@@ -83,6 +90,33 @@ export const useProfiles = create<ProfileState>()((set, get) => {
       if (get().profiles.some((p) => p.id === id)) commit({ activeId: id });
     },
 
+    equip(kind, id, on = true) {
+      const p = selectActiveProfile(get());
+      if (!p || (on && !isUnlocked(kind, id, p.level))) return false;
+      const e = { ...p.equipped, effects: [...p.equipped.effects] };
+      let avatarId = p.avatarId;
+      switch (kind) {
+        case 'avatar':
+          if (!on) return false;
+          avatarId = id;
+          break;
+        case 'title':
+          if (on) e.title = id;
+          else if (e.title === id) delete e.title;
+          break;
+        case 'effect':
+          e.effects = on ? [...new Set([...e.effects, id])] : e.effects.filter((x) => x !== id);
+          break;
+        default:
+          if (!on) return false;
+          e[kind] = id;
+      }
+      commit({
+        profiles: get().profiles.map((x) => (x.id === p.id ? { ...x, avatarId, equipped: e } : x)),
+      });
+      return true;
+    },
+
     settleFinishedGame(now = new Date()) {
       const game = useGameStore.getState();
       if (game.status !== 'over' || !game.result || !game.settings) return;
@@ -109,6 +143,12 @@ export const selectActiveProfile = (s: ProfileState): Profile | null =>
   s.profiles.find((p) => p.id === s.activeId) ?? null;
 
 export const useActiveProfile = () => useProfiles(selectActiveProfile);
+
+/** The active profile's board, pieces, frame… resolved against its level. */
+export function useCosmetics(): Cosmetics {
+  const profile = useActiveProfile();
+  return useMemo(() => cosmeticsFor(profile), [profile]);
+}
 
 export const useProfile = (id: string | undefined) =>
   useProfiles((s) => (id ? (s.profiles.find((p) => p.id === id) ?? null) : null));

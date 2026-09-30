@@ -94,7 +94,7 @@ export function Modal({
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}
             className={cx(
-              'relative w-full max-w-md rounded-2xl border border-line bg-elev p-6 shadow-2xl',
+              'relative max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-elev p-6 shadow-2xl',
               className,
             )}
             initial={{ opacity: 0, y: 12, scale: 0.97 }}

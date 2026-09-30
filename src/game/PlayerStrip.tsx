@@ -2,12 +2,12 @@ import type { PieceSymbol } from 'chess.js';
 import { useMemo } from 'react';
 import type { Color } from '@shared/types';
 import { pieceUrl } from '@/config/pieces';
+import { cosmeticsFor } from '@/config/rewards';
 import { useAiUi } from '@/ai/useAiOpponent';
-import { Avatar, LevelBadge } from '@/components/Avatar';
+import { Avatar, LevelBadge, TitleTag } from '@/components/Avatar';
 import { XpBar } from '@/components/XpBar';
 import { aiColorOf, useGameStore } from '@/store/gameStore';
-import { useProfile } from '@/store/profileStore';
-import { useSettings } from '@/store/settingsStore';
+import { useCosmetics, useProfile } from '@/store/profileStore';
 import { cx, formatClock } from '@/utils/format';
 import { capturedPieces } from './pieceIds';
 import { other, PIECE_VALUE } from './rules';
@@ -47,7 +47,8 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
   const history = useGameStore((s) => s.history);
   const viewPly = useGameStore((s) => s.viewPly);
   const toMove = useGameStore((s) => s.status === 'playing' && s.fen.split(' ')[1] === color);
-  const pieceSet = useSettings((s) => s.settings.pieceSet);
+  const { pieceSet } = useCosmetics();
+  const look = useMemo(() => profile && cosmeticsFor(profile), [profile]);
   const isAi = useGameStore((s) => aiColorOf(s.settings) === color);
   const thinking = useAiUi((s) => s.thinking) && isAi && toMove;
 
@@ -74,8 +75,8 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
       )}
     >
       <div className="flex items-center gap-3">
-        {profile ? (
-          <Avatar id={profile.avatarId} size={44} className="rounded-xl" />
+        {look ? (
+          <Avatar id={look.avatarId} frame={look.frame} size={44} className="rounded-xl" />
         ) : (
           <div
             className={cx(
@@ -96,6 +97,7 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
             <span className="truncate font-semibold">{name}</span>
             {profile && <LevelBadge level={profile.level} className="h-5 px-2 text-[11px]" />}
           </div>
+          <TitleTag id={look?.title} className="block" />
           <div className="text-xs text-muted" aria-live={isAi ? 'polite' : undefined}>
             {color === 'w' ? 'White' : 'Black'}
             {isAi && ' · Computer'}

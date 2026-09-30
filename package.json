@@ -1,7 +1,7 @@
 {
   "name": "chess-arena",
   "productName": "Chess Arena",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A modern 2D chess game for Windows — play locally or against the computer.",
   "author": "Chess Arena",
   "private": true,

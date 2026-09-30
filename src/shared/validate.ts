@@ -1,7 +1,9 @@
 import {
   ACCENTS,
+  DEFAULT_EQUIPPED,
   DEFAULT_SETTINGS,
   type Difficulty,
+  type Equipped,
   type GameRecord,
   type GameSettings,
   type Profile,
@@ -54,8 +56,6 @@ export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTIN
     const v = input[key];
     if (isBool(v)) out[key] = v;
   }
-  if (isStr(input.board) && SLUG.test(input.board)) out.board = input.board;
-  if (isStr(input.pieceSet) && SLUG.test(input.pieceSet)) out.pieceSet = input.pieceSet;
   return out;
 }
 
@@ -153,6 +153,26 @@ function sanitizeStats(v: unknown): ProfileStats {
   return stats;
 }
 
+/** Structural check only: whether an item is unlocked is decided by the renderer from the level. */
+export function sanitizeEquipped(v: unknown): Equipped {
+  const e = isObj(v) ? v : {};
+  const out: Equipped = {
+    board: isId(e.board) ? e.board : DEFAULT_EQUIPPED.board,
+    pieceSet: isId(e.pieceSet) ? e.pieceSet : DEFAULT_EQUIPPED.pieceSet,
+    frame: isId(e.frame) ? e.frame : DEFAULT_EQUIPPED.frame,
+    effects: Array.isArray(e.effects) ? [...new Set(e.effects.filter(isId))].slice(0, 10) : [],
+  };
+  if (isId(e.title)) out.title = e.title;
+  return out;
+}
+
+function sanitizeAchievements(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!isObj(v)) return out;
+  for (const [id, at] of Object.entries(v).slice(0, 100)) if (isId(id) && isIso(at)) out[id] = at;
+  return out;
+}
+
 /** A profile from disk or the renderer with every field checked; null if unusable. */
 export function sanitizeProfile(v: unknown): Profile | null {
   if (!isObj(v) || !isId(v.id) || v.id === 'guest') return null;
@@ -175,6 +195,8 @@ export function sanitizeProfile(v: unknown): Profile | null {
     createdAt: isIso(v.createdAt) ? v.createdAt : new Date(0).toISOString(),
     stats: sanitizeStats(v.stats),
     pvpToday,
+    equipped: sanitizeEquipped(v.equipped),
+    achievements: sanitizeAchievements(v.achievements),
   };
 }
 

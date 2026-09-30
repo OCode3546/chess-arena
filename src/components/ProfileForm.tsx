@@ -1,4 +1,6 @@
 import { AVATARS } from '@/config/avatars';
+import { MAX_LEVEL } from '@/config/progression';
+import { isUnlocked } from '@/config/rewards';
 import { cx } from '@/utils/format';
 import { Avatar } from './Avatar';
 import { cleanName, inputClass, NAME_MAX } from './fields';
@@ -10,7 +12,10 @@ export function ProfileForm({
   onName,
   onAvatar,
   onSubmit,
+  level = 1,
 }: {
+  /** Level of the profile being edited; decides which avatars are unlocked. */
+  level?: number;
   name: string;
   avatarId: string;
   onName: (name: string) => void;
@@ -35,8 +40,8 @@ export function ProfileForm({
       </label>
       <div>
         <div className="mb-2 text-xs text-muted">Avatar</div>
-        <div className="flex gap-3" role="radiogroup" aria-label="Avatar">
-          {AVATARS.map((a) => (
+        <div className="flex flex-wrap gap-3" role="radiogroup" aria-label="Avatar">
+          {AVATARS.filter((a) => isUnlocked('avatar', a.id, level)).map((a) => (
             <button
               key={a.id}
               type="button"
@@ -53,6 +58,9 @@ export function ProfileForm({
             </button>
           ))}
         </div>
+        {level < MAX_LEVEL && (
+          <p className="mt-2 text-xs text-muted">More avatars unlock as you level up.</p>
+        )}
       </div>
     </div>
   );

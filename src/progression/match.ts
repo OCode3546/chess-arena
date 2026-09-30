@@ -1,15 +1,19 @@
-import type {
-  AssistsUsed,
-  Color,
-  Difficulty,
-  GameRecord,
-  GameSettings,
-  Profile,
-  ProfileStats,
+import {
+  DEFAULT_EQUIPPED,
+  type AssistsUsed,
+  type Color,
+  type Difficulty,
+  type GameRecord,
+  type GameSettings,
+  type Profile,
+  type ProfileStats,
 } from '@shared/types';
+import type { AchievementId } from '@/config/achievements';
 import { PVP_RULES, type Outcome } from '@/config/progression';
+import { unlocksBetween, type Reward } from '@/config/rewards';
 import { other, type GameResult } from '@/game/rules';
-import { aiAward, pvpAward, type XpAward } from './awards';
+import { newAchievements } from './achievements';
+import { aiAward, isAbandoned, pvpAward, type XpAward } from './awards';
 import { applyXp, type XpState } from './levels';
 
 export const GUEST = 'guest';
@@ -42,6 +46,8 @@ export function newProfile(name: string, avatarId: string, now = new Date()): Pr
     createdAt: now.toISOString(),
     stats: emptyStats(),
     pvpToday: {},
+    equipped: { ...DEFAULT_EQUIPPED, effects: [] },
+    achievements: {},
   };
 }
 
@@ -62,6 +68,9 @@ export interface PlayerAward {
   before: XpState;
   after: XpState;
   levelsGained: number;
+  /** Rewards from every level gained. */
+  unlocks: Reward[];
+  achievements: AchievementId[];
 }
 
 export interface Settlement {
@@ -116,11 +125,36 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
     const id = settings.players[color].profileId;
     return id ? byId.get(id) : undefined;
   };
-  const credit = (p: Profile, color: Color, award: XpAward, stats: ProfileStats, extra = {}) => {
+  const credit = (
+    p: Profile,
+    color: Color,
+    award: XpAward,
+    stats: ProfileStats,
+    outcome: Outcome,
+    extra = {},
+  ) => {
     const before = { level: p.level, xp: p.xp };
     const { levelsGained, ...after } = applyXp(before, award.total);
-    updated.set(p.id, { ...p, ...after, stats, ...extra });
-    awards.push({ profileId: p.id, color, name: p.name, award, before, after, levelsGained });
+    const earned = newAchievements(p.achievements, {
+      stats,
+      outcome,
+      moves,
+      abandoned: isAbandoned(result.reason, moves),
+    });
+    const achievements = { ...p.achievements };
+    for (const id of earned) achievements[id] = now.toISOString();
+    updated.set(p.id, { ...p, ...after, stats, achievements, ...extra });
+    awards.push({
+      profileId: p.id,
+      color,
+      name: p.name,
+      award,
+      before,
+      after,
+      levelsGained,
+      unlocks: unlocksBetween(before.level, after.level),
+      achievements: earned,
+    });
   };
 
   if (settings.mode === 'pvai' && settings.humanColor && settings.difficulty) {
@@ -143,7 +177,7 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
         day,
         mateIn: result.reason === 'checkmate' ? moves : undefined,
       });
-      credit(p, human, award, stats);
+      credit(p, human, award, stats, outcome);
     }
   } else if (settings.mode === 'pvp') {
     const sides = { w: profileOn('w'), b: profileOn('b') };
@@ -173,6 +207,8 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
           before: { level: p.level, xp: p.xp },
           after: { level: p.level, xp: p.xp },
           levelsGained: 0,
+          unlocks: [],
+          achievements: [],
         });
         continue;
       }
@@ -184,7 +220,7 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
       const stats = withResult(p.stats, outcome, {
         mateIn: result.reason === 'checkmate' ? moves : undefined,
       });
-      credit(p, color, award, stats, { pvpToday });
+      credit(p, color, award, stats, outcome, { pvpToday });
     }
   }
 

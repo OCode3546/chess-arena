@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { aiEngine } from '@/ai/engine';
 import { Button, Modal, ToastHost } from '@/components/ui';
+import { achievementById } from '@/config/achievements';
 import { AboutScreen } from '@/screens/AboutScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
-import { HistoryScreen, RewardsScreen, TutorialScreen } from '@/screens/Placeholders';
+import { HistoryScreen, TutorialScreen } from '@/screens/Placeholders';
 import { ProfileScreen } from '@/screens/ProfileScreen';
+import { RewardsScreen } from '@/screens/RewardsScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { SetupScreen } from '@/screens/SetupScreen';
 import { SplashScreen } from '@/screens/SplashScreen';
@@ -38,6 +40,20 @@ export function App() {
   useEffect(() => {
     wireGamePersistence();
     const offProgression = wireProgression();
+    const offAchievements = useProfiles.subscribe((s, prev) => {
+      if (!s.lastMatch || s.lastMatch === prev.lastMatch) return;
+      const several = s.lastMatch.awards.length > 1;
+      for (const a of s.lastMatch.awards) {
+        for (const def of a.achievements.map(achievementById)) {
+          if (def) {
+            toast(
+              `${def.icon} Achievement unlocked: ${def.name}${several ? ` (${a.name})` : ''} — ${def.description}`,
+              'success',
+            );
+          }
+        }
+      }
+    });
     const started = Date.now();
     const offBackend = aiEngine.onBackendChange((backend) => {
       document.documentElement.dataset.engine = backend;
@@ -69,6 +85,7 @@ export function App() {
     return () => {
       offBackend();
       offProgression();
+      offAchievements();
     };
   }, []);
 

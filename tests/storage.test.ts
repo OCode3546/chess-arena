@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SCHEMA_VERSION, storageMigrations } from '../electron/migrations';
 import { migrate } from '@shared/migrate';
 import { DEFAULT_SETTINGS } from '@shared/types';
 import { isSavedGame, sanitizeSettings } from '@shared/validate';
@@ -69,7 +70,8 @@ describe('settings sanitising', () => {
     expect(s.accent).toBe('rose');
     expect(s.volume).toBe(1);
     expect(s.sound).toBe(DEFAULT_SETTINGS.sound);
-    expect(s.board).toBe(DEFAULT_SETTINGS.board);
+    // Board and piece set moved to the profile in schema v2.
+    expect('board' in s).toBe(false);
     expect('extra' in s).toBe(false);
   });
 });
@@ -92,5 +94,59 @@ describe('schema migrations', () => {
 
   it('leaves current or newer documents untouched', () => {
     expect(migrate({ schemaVersion: 3 }, { 1: () => ({}) }, 2).changed).toBe(false);
+  });
+});
+
+describe('v2 storage migration (per-profile cosmetics)', () => {
+  const v1Profile = {
+    id: 'p1',
+    name: 'Ana',
+    avatarId: 'rook-emerald',
+    level: 4,
+    xp: 400,
+    createdAt: '2026-09-01T10:00:00.000Z',
+    stats: {},
+    pvpToday: {},
+  };
+
+  it('moves the board and piece set from Settings onto existing profiles', () => {
+    const m = storageMigrations();
+    const settings = migrate(
+      {
+        schemaVersion: 1,
+        settings: { ...DEFAULT_SETTINGS, board: 'slate', pieceSet: 'classic', theme: 'light' },
+      },
+      m.settings,
+      SCHEMA_VERSION,
+    ).data;
+    expect(settings.schemaVersion).toBe(2);
+    expect(settings.settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'light' });
+
+    const profiles = migrate(
+      { schemaVersion: 1, activeId: 'p1', profiles: [v1Profile] },
+      m.profiles,
+      SCHEMA_VERSION,
+    ).data as { profiles: Array<Record<string, unknown>> };
+    expect(profiles.profiles[0]).toMatchObject({
+      id: 'p1',
+      xp: 400,
+      equipped: { board: 'slate', pieceSet: 'classic', frame: 'none', effects: [] },
+      achievements: {},
+    });
+  });
+
+  it('gives defaults to fresh installs and keeps already-migrated profiles', () => {
+    const m = storageMigrations();
+    migrate({}, m.settings, SCHEMA_VERSION);
+    const fresh = migrate({}, m.profiles, SCHEMA_VERSION).data;
+    expect(fresh).toMatchObject({ schemaVersion: 2, profiles: [], activeId: null });
+
+    const equipped = { board: 'neon', pieceSet: 'modern', frame: 'gold', effects: ['move-trail'] };
+    const kept = migrate(
+      { schemaVersion: 1, profiles: [{ ...v1Profile, equipped }] },
+      m.profiles,
+      SCHEMA_VERSION,
+    ).data as { profiles: Array<Record<string, unknown>> };
+    expect(kept.profiles[0]!.equipped).toEqual(equipped);
   });
 });

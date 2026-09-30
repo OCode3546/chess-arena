@@ -18,22 +18,7 @@ import {
   sanitizeProfilesDoc,
   sanitizeSettings,
 } from '@shared/validate';
-
-const SCHEMA_VERSION = 1;
-
-/** Keyed by the schema version they upgrade *to*. */
-const settingsMigrations: Record<number, Migration> = {
-  1: (d) => ({ ...d, settings: sanitizeSettings(d.settings) }),
-};
-const saveMigrations: Record<number, Migration> = {
-  1: (d) => ({ ...d, game: d.game ?? null }),
-};
-const profileMigrations: Record<number, Migration> = {
-  1: (d) => ({ ...d, ...sanitizeProfilesDoc(d) }),
-};
-const historyMigrations: Record<number, Migration> = {
-  1: (d) => ({ ...d, games: Array.isArray(d.games) ? d.games.filter(isGameRecord) : [] }),
-};
+import { SCHEMA_VERSION, storageMigrations } from './migrations';
 
 type Doc = Record<string, unknown>;
 
@@ -68,10 +53,11 @@ function openStore(name: string, migrations: Record<number, Migration>): Store<D
 }
 
 export function initStorage(): void {
-  settingsStore = openStore('settings', settingsMigrations);
-  saveStore = openStore('savegame', saveMigrations);
-  profileStore = openStore('profiles', profileMigrations);
-  historyStore = openStore('history', historyMigrations);
+  const migrations = storageMigrations();
+  settingsStore = openStore('settings', migrations.settings);
+  saveStore = openStore('savegame', migrations.savegame);
+  profileStore = openStore('profiles', migrations.profiles);
+  historyStore = openStore('history', migrations.history);
   if (startupIssues.includes('savegame')) saveCorrupt = true;
 }
 

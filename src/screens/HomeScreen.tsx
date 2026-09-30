@@ -2,7 +2,8 @@ import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/app/TitleBar';
-import { Avatar, LevelBadge } from '@/components/Avatar';
+import { LevelBadge, ProfileAvatar, TitleTag } from '@/components/Avatar';
+import { cosmeticsFor } from '@/config/rewards';
 import { Button } from '@/components/ui';
 import { XpBar } from '@/components/XpBar';
 import { describeTimeControl } from '@/config/timeControls';
@@ -209,7 +210,7 @@ export function HomeScreen() {
             {profile ? (
               <>
                 <div className="flex items-center gap-4">
-                  <Avatar id={profile.avatarId} size={64} />
+                  <ProfileAvatar profile={profile} size={64} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate font-display text-xl font-bold">
@@ -217,6 +218,7 @@ export function HomeScreen() {
                       </span>
                       <LevelBadge level={profile.level} />
                     </div>
+                    <TitleTag id={cosmeticsFor(profile).title} className="block" />
                     <div className="mt-0.5 text-xs text-muted">
                       {profile.xp.toLocaleString()} XP total
                       {profileCount > 1 && ' · switch profile'}

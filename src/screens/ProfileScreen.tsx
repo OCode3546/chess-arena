@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Avatar, LevelBadge } from '@/components/Avatar';
+import { LevelBadge, ProfileAvatar, TitleTag } from '@/components/Avatar';
 import { cleanName } from '@/components/fields';
 import { ProfileForm } from '@/components/ProfileForm';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Card, CardTitle, Modal } from '@/components/ui';
 import { XpBar } from '@/components/XpBar';
+import { ACHIEVEMENTS } from '@/config/achievements';
 import { AVATARS } from '@/config/avatars';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '@/config/difficulty';
 import { MAX_LEVEL } from '@/config/progression';
+import { cosmeticsFor } from '@/config/rewards';
 import { levelProgress } from '@/progression/levels';
 import { useActiveProfile, useProfiles } from '@/store/profileStore';
 import { toast } from '@/store/toastStore';
@@ -60,6 +62,43 @@ function StatsCard({ profile }: { profile: Profile }) {
   );
 }
 
+function AchievementsCard({ profile }: { profile: Profile }) {
+  const earned = ACHIEVEMENTS.filter((a) => a.id in profile.achievements).length;
+  return (
+    <Card className="flex flex-col gap-4">
+      <div className="flex items-baseline justify-between">
+        <CardTitle>Achievements</CardTitle>
+        <span className="text-xs text-muted tabular-nums">
+          {earned} / {ACHIEVEMENTS.length}
+        </span>
+      </div>
+      <ul className="grid grid-cols-5 gap-2">
+        {ACHIEVEMENTS.map((a) => {
+          const at = profile.achievements[a.id];
+          return (
+            <li
+              key={a.id}
+              className={cx(
+                'flex flex-col items-center gap-1 rounded-xl border px-3 py-4 text-center',
+                at ? 'border-warning/40 bg-warning/10' : 'border-line bg-surface opacity-55',
+              )}
+              data-achievement={a.id}
+              data-earned={!!at || undefined}
+              title={at ? `Earned ${new Date(at).toLocaleDateString()}` : 'Not earned yet'}
+            >
+              <span className={cx('text-3xl', !at && 'grayscale')} aria-hidden>
+                {a.icon}
+              </span>
+              <span className="text-sm font-semibold">{a.name}</span>
+              <span className="text-[11px] leading-tight text-muted">{a.description}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
 export function ProfileScreen() {
   const navigate = useNavigate();
   const profiles = useProfiles((s) => s.profiles);
@@ -74,7 +113,8 @@ export function ProfileScreen() {
 
   const openAdd = () => {
     setName('');
-    setAvatarId(AVATARS[profiles.length % AVATARS.length]!.id);
+    const starters = AVATARS.filter((a) => a.pack === 'starter');
+    setAvatarId(starters[profiles.length % starters.length]!.id);
     setEditor({ mode: 'add' });
   };
   const openEdit = (p: Profile) => {
@@ -129,7 +169,7 @@ export function ProfileScreen() {
       }
     >
       <Card className="flex items-center gap-6 p-6">
-        <Avatar id={active.avatarId} size={96} className="rounded-3xl" />
+        <ProfileAvatar profile={active} size={96} className="rounded-3xl" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <h2 className="truncate font-display text-3xl font-bold" data-profile-name>
@@ -140,6 +180,7 @@ export function ProfileScreen() {
               Edit
             </Button>
           </div>
+          <TitleTag id={cosmeticsFor(active).title} className="block text-sm" />
           <div className="mt-1 text-sm text-muted">
             {active.xp.toLocaleString()} XP total ·{' '}
             {progress.max
@@ -151,6 +192,8 @@ export function ProfileScreen() {
       </Card>
 
       <StatsCard profile={active} />
+
+      <AchievementsCard profile={active} />
 
       <Card className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -175,7 +218,7 @@ export function ProfileScreen() {
                   isActive ? 'border-accent bg-accent/10' : 'border-line bg-surface',
                 )}
               >
-                <Avatar id={p.avatarId} size={40} className="rounded-xl" />
+                <ProfileAvatar profile={p} size={40} className="rounded-xl" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-semibold">{p.name}</span>
@@ -213,6 +256,7 @@ export function ProfileScreen() {
 
       <ProfileEditorModal
         editor={editor}
+        level={editor?.mode === 'edit' ? (profiles.find((p) => p.id === editor.id)?.level ?? 1) : 1}
         name={name}
         avatarId={avatarId}
         onName={setName}
@@ -254,6 +298,7 @@ export function ProfileScreen() {
 
 function ProfileEditorModal({
   editor,
+  level = 1,
   name,
   avatarId,
   onName,
@@ -262,6 +307,7 @@ function ProfileEditorModal({
   onClose,
 }: {
   editor: Editor;
+  level?: number;
   name: string;
   avatarId: string;
   onName: (v: string) => void;
@@ -286,6 +332,7 @@ function ProfileEditorModal({
       }
     >
       <ProfileForm
+        level={level}
         name={name}
         avatarId={avatarId}
         onName={onName}

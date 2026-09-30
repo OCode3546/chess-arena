@@ -23,8 +23,6 @@ export interface Settings {
   colorBlindHighlights: boolean;
   autoUpdate: boolean;
   launchAtStartup: boolean;
-  board: string;
-  pieceSet: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -39,8 +37,6 @@ export const DEFAULT_SETTINGS: Settings = {
   colorBlindHighlights: false,
   autoUpdate: true,
   launchAtStartup: false,
-  board: 'classic-wood',
-  pieceSet: 'modern',
 };
 
 export interface TimeControl {
@@ -71,6 +67,23 @@ export interface ProfileStats {
   fastestMate?: number;
 }
 
+/** Cosmetics a profile has chosen. Unlocks are derived from the level, never stored. */
+export interface Equipped {
+  board: string;
+  pieceSet: string;
+  frame: string;
+  title?: string;
+  /** Equipped effect ids (move trail, capture particles…). */
+  effects: string[];
+}
+
+export const DEFAULT_EQUIPPED: Equipped = {
+  board: 'classic-wood',
+  pieceSet: 'modern',
+  frame: 'none',
+  effects: [],
+};
+
 export interface Profile {
   id: string;
   name: string;
@@ -82,6 +95,9 @@ export interface Profile {
   stats: ProfileStats;
   /** Local games played today per opponent (profile id or 'guest'), for diminishing returns. */
   pvpToday: Record<string, { date: string; count: number }>;
+  equipped: Equipped;
+  /** Achievement id → ISO time it was earned. */
+  achievements: Record<string, string>;
 }
 
 export interface ProfilesDoc {

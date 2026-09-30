@@ -14,8 +14,10 @@ import type { Color } from '@shared/types';
 import { boardTheme } from '@/config/boards';
 import { PIECE_NAME, pieceUrl } from '@/config/pieces';
 import { useGameStore } from '@/store/gameStore';
+import { useCosmetics } from '@/store/profileStore';
 import { useSettings } from '@/store/settingsStore';
 import { cx } from '@/utils/format';
+import { BoardEffects } from './BoardEffects';
 import { displayPos, isLightSquare, squareAt } from './boardGeometry';
 import { trackPieces, type TrackedPiece } from './pieceIds';
 import { PromotionPicker } from './PromotionPicker';
@@ -123,6 +125,7 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
   const selectSquare = useGameStore((s) => s.selectSquare);
   const attemptMove = useGameStore((s) => s.attemptMove);
   const settings = useSettings((s) => s.settings);
+  const look = useCosmetics();
 
   // Keep the board square and as large as the space allows.
   useLayoutEffect(() => {
@@ -155,7 +158,7 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
   const canMove = interactive && status === 'playing' && !paused && viewPly === null && !aiTurn;
   const squarePx = size / 8;
   const hl = settings.colorBlindHighlights ? HIGHLIGHT.colorBlind : HIGHLIGHT.normal;
-  const theme = boardTheme(settings.board);
+  const theme = boardTheme(look.board);
 
   // Any in-flight drag is ignored once the position changes underneath it.
   const posKey = `${fen}|${viewPly}`;
@@ -378,6 +381,8 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
       <div
         ref={boardRef}
         role="application"
+        data-board={look.board}
+        data-piece-set={look.pieceSet}
         aria-label={`Chess board, ${orientation === 'w' ? 'White' : 'Black'} at the bottom. Arrow keys move the cursor, Enter selects and moves. Cursor on ${cursor}${cursorPiece ? `, ${cursorPiece.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[cursorPiece.type]}` : ''}.`}
         tabIndex={0}
         onKeyDown={onKeyDown}
@@ -404,7 +409,7 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
                 piece={p}
                 row={row}
                 col={col}
-                set={settings.pieceSet}
+                set={look.pieceSet}
                 drag={drag?.id === p.id ? drag : null}
                 squarePx={squarePx}
                 animate={settings.animations}
@@ -412,7 +417,15 @@ export function Board({ interactive = true }: { interactive?: boolean }) {
             );
           })}
         </AnimatePresence>
-        <PromotionPicker color={turn} pieceSet={settings.pieceSet} />
+        <BoardEffects
+          move={viewPly === null ? lastMove : undefined}
+          ply={shownHistory.length}
+          orientation={orientation}
+          squarePx={squarePx}
+          trail={settings.animations && look.effects.includes('move-trail')}
+          particles={settings.animations && look.effects.includes('capture-particles')}
+        />
+        <PromotionPicker color={turn} pieceSet={look.pieceSet} />
         <div className="sr-only" aria-live="polite">
           {ariaStatus}
         </div>

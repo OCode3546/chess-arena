@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Avatar, LevelBadge } from '@/components/Avatar';
+import { LevelBadge, ProfileAvatar } from '@/components/Avatar';
 import { cleanName, inputClass, NAME_MAX } from '@/components/fields';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Card, CardTitle, Modal, Tabs, Toggle } from '@/components/ui';
@@ -51,7 +51,7 @@ function PlayerPicker({
         {label}
         <div className="flex items-center gap-3">
           {selected ? (
-            <Avatar id={selected.avatarId} size={40} className="rounded-xl" />
+            <ProfileAvatar profile={selected} size={40} className="rounded-xl" />
           ) : (
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-sm font-bold text-muted">
               ?

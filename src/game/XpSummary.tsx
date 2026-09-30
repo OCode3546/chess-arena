@@ -1,9 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { LevelBadge } from '@/components/Avatar';
+import { achievementById } from '@/config/achievements';
+import { rewardKey, rewardsAt } from '@/config/rewards';
 import { levelProgress } from '@/progression/levels';
 import type { PlayerAward } from '@/progression/match';
 import { useSettings } from '@/store/settingsStore';
+import { cx } from '@/utils/format';
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 
@@ -54,6 +57,7 @@ function AwardRow({
 
   const p = levelProgress(shown);
   const gained = Math.min(a.award.total, shown - a.before.xp);
+  const done = shown === a.after.xp;
 
   return (
     <div className="rounded-xl border border-line bg-surface p-4 text-left" data-xp-award>
@@ -96,6 +100,50 @@ function AwardRow({
           {p.max ? 'MAX' : `${p.into} / ${p.needed}`}
         </span>
       </div>
+      {done && (a.unlocks.length > 0 || a.achievements.length > 0) && (
+        <motion.div
+          className="mt-3 border-t border-line pt-3"
+          initial={animate ? { opacity: 0, y: 6 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          data-unlocks
+        >
+          {a.unlocks.length > 0 && (
+            <>
+              <div className="text-[11px] font-semibold tracking-wider text-muted uppercase">
+                Unlocked · Lv {a.after.level}
+              </div>
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {a.unlocks.map((r) => (
+                  <li
+                    key={rewardKey(r)}
+                    className="rounded-full bg-accent/15 px-2.5 py-1 text-xs font-semibold text-accent-text"
+                    data-unlock={rewardKey(r)}
+                  >
+                    {r.name}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {a.achievements.length > 0 && (
+            <ul className={cx('flex flex-wrap gap-1.5', a.unlocks.length > 0 && 'mt-2')}>
+              {a.achievements.map(achievementById).map(
+                (def) =>
+                  def && (
+                    <li
+                      key={def.id}
+                      className="rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-fg"
+                      title={def.description}
+                      data-achievement={def.id}
+                    >
+                      {def.icon} {def.name}
+                    </li>
+                  ),
+              )}
+            </ul>
+          )}
+        </motion.div>
+      )}
     </div>
   );
 }
@@ -142,6 +190,13 @@ function LevelUpBurst({ level, reduced }: { level: number; reduced: boolean }) {
       >
         <div className="text-xs font-semibold tracking-[0.25em] uppercase opacity-85">Level up</div>
         <div className="font-display text-4xl font-bold">Lv {level}</div>
+        {rewardsAt(level).length > 0 && (
+          <div className="mt-1 max-w-64 text-xs font-medium opacity-90">
+            {rewardsAt(level)
+              .map((r) => r.name)
+              .join(' · ')}
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
