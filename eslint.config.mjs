@@ -6,11 +6,21 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['out', 'dist', 'release', 'node_modules', 'scripts'] },
+  {
+    ignores: [
+      'out',
+      'dist',
+      'release',
+      'node_modules',
+      'scripts',
+      'server/dist',
+      'server/build.mjs',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['electron/**/*.ts', '*.config.ts'],
+    files: ['electron/**/*.ts', '*.config.ts', 'server/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
   {

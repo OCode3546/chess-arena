@@ -4,7 +4,7 @@ A modern, 2D, fully functional chess game shipped as a **downloadable desktop ap
 
 **How to use this spec with an AI coding assistant:** work one phase at a time. Each phase is self-contained, lists deliverables, and ends with an acceptance checklist. Start a new session per phase and paste only: (1) sections 1–3 (context), (2) §13 for online phases, and (3) the single phase you are building. Don't start a phase until the previous one's checklist passes.
 
-**Status (2026-11-18):** Phases 1–7 done (v0.7.0). Next: Phase 8. An earlier Android/Capacitor draft of this spec was shelved (`git stash list` → "Android/Capacitor spec draft").
+**Status (2026-11-18):** Phases 1–8 built (v0.8.0 release builds run on GitHub Actions). Phase 9 server built and tested in `server/`; deployment waits on the choice of host (§13.6). Next: Phase 10. An earlier Android/Capacitor draft of this spec was shelved (`git stash list` → "Android/Capacitor spec draft").
 
 ---
 
@@ -436,7 +436,7 @@ Chess Arena app (Electron renderer)  --wss://-->  Game server (Node + ws + chess
 
 ### 13.3 Rooms & quick match
 - Room code: 6 chars from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`; unique among live rooms; expires 10 min after creation or when the host disconnects for > 60 s.
-- Quick-match pools: 3+2, 5+3, 10+0, 15+10. Pair the two longest-waiting players in a pool; don't immediately re-pair the same two guests if a third player is waiting. Colors random.
+- Quick-match pools: 3+2, 5+3, 10+0, 15+10. A player is paired the moment someone else is waiting in the same pool (so a pool never holds more than one player). Colors random.
 - A guest can hold at most one of: room, queue entry, live game.
 
 ### 13.4 Game rules on the server

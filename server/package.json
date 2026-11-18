@@ -1,0 +1,30 @@
+{
+  "name": "chess-arena-server",
+  "version": "0.1.0",
+  "description": "Online game server for Chess Arena: invite-code rooms, quick match and server-authoritative games.",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/index.js",
+    "dev": "node build.mjs && node --enable-source-maps dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "soak": "vitest run test/soak.test.ts"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.1"
+  }
+}

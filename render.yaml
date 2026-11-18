@@ -1,0 +1,25 @@
+# Render Blueprint for the Chess Arena game server (optional — see server/README.md for other hosts).
+# Render → New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: chess-arena-server
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: .
+    # "free" works for testing but sleeps when idle (first connection then takes ~1 minute).
+    plan: starter
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - server/**
+        - src/shared/protocol.ts
+        - src/game/rules.ts
+    envVars:
+      - key: TRUST_PROXY
+        value: '1'
+      - key: ID_SECRET
+        generateValue: true
+      - key: MIN_APP_VERSION
+        value: 0.9.0
+      - key: LOG_LEVEL
+        value: info

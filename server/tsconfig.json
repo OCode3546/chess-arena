@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    // The protocol and chess rules are shared with the app (../src). chess.js always
+    // resolves to this package's copy so the server builds without the app's node_modules.
+    "paths": {
+      "@shared/*": ["../src/shared/*"],
+      "@game/*": ["../src/game/*"],
+      "chess.js": ["./node_modules/chess.js"]
+    }
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

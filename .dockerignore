@@ -1,0 +1,7 @@
+# Only what the game server image needs (see server/Dockerfile).
+*
+!server/
+server/node_modules
+server/dist
+!src/shared/
+!src/game/rules.ts
