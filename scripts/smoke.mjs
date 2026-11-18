@@ -75,8 +75,8 @@ const AI_GAME = `(async () => {
   byText('Start Game').click();
   const first = await waitFor(() => status().startsWith('White played'), 30000);
   const firstMs = Math.round(performance.now() - t0);
-  const board = document.querySelector('[role=application]');
   const click = (sq) => {
+    const board = document.querySelector('[role=application]');
     const r = board.getBoundingClientRect();
     const col = 7 - (sq.charCodeAt(0) - 97);
     const row = Number(sq[1]) - 1;
@@ -86,11 +86,20 @@ const AI_GAME = `(async () => {
     board.dispatchEvent(new PointerEvent('pointerdown', o));
     board.dispatchEvent(new PointerEvent('pointerup', o));
   };
-  click('e7');
-  await sleep(150);
-  click('e5');
-  const humanMoved = await waitFor(() => status().startsWith('Black played'), 3000);
-  const reply = await waitFor(() => status().startsWith('White played'), 30000);
+  const moveCount = () =>
+    document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
+  // The board takes clicks only once React has re-rendered it as movable (slow CI machines
+  // need longer), so retry until the move actually lands.
+  const tryMove = async (from, to) => {
+    const before = moveCount();
+    for (let i = 0; i < 12; i++) {
+      click(from); await sleep(120); click(to);
+      if (await waitFor(() => moveCount() > before, 500)) return true;
+    }
+    return false;
+  };
+  const humanMoved = await tryMove('e7', 'e5');
+  const reply = humanMoved && (await waitFor(() => moveCount() >= 3, 30000));
   const strips = document.body.textContent.includes('Computer');
   return { first, firstMs, humanMoved, reply, strips, engine: document.documentElement.dataset.engine };
 })()`;
@@ -413,8 +422,11 @@ const P7_PAGES = `(async () => {
 const P8_HELPERS = `
   ${HELPERS}
   const createProfile = async (name) => {
+    // The first-run dialog appears after the splash screen, which can take a while.
+    await waitFor(() => !!document.querySelector('[role=dialog] input'), 8000);
     const input = document.querySelector('[role=dialog] input');
     if (!input) return false;
+    await sleep(200);
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, name);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(100);
@@ -430,10 +442,33 @@ const P8_HELPERS = `
     board.dispatchEvent(new PointerEvent('pointerdown', o));
     board.dispatchEvent(new PointerEvent('pointerup', o));
   };
+  const moveCount = () =>
+    document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
+  // The board takes clicks only once React has re-rendered it as movable, so retry each
+  // move until the move list grows (slow CI machines need several tries).
   const play = async (moves) => {
-    for (const m of moves) { click(m.slice(0, 2)); await sleep(60); click(m.slice(2)); await sleep(300); }
+    for (const m of moves) {
+      const before = moveCount();
+      let landed = false;
+      for (let i = 0; i < 12 && !landed; i++) {
+        click(m.slice(0, 2)); await sleep(120); click(m.slice(2));
+        landed = await waitFor(() => moveCount() > before, 500);
+      }
+      if (!landed) return false;
+      await sleep(250);
+    }
+    return true;
   };
   const status = () => document.querySelector('[role=application] [aria-live]')?.textContent ?? '';
+  /** Open a screen and wait until a button starting with \`text\` is there. */
+  const open = async (hash, text) => {
+    location.hash = hash;
+    return waitFor(() => !!byText(text), 8000);
+  };
+  const startGame = async () => {
+    byText('Start Game').click();
+    return waitFor(() => !!document.querySelector('[data-screen=game] [role=application]'), 8000);
+  };
 `;
 
 // Phase 8: resign against the AI; the loss is recorded. Also: dev/smoke builds don't self-update.
@@ -441,16 +476,13 @@ const P8_AI_RESIGN = `(async () => {
   ${P8_HELPERS}
   await createProfile('Rex');
   const updater = await window.chessArena.updater.getInfo();
-  location.hash = '#/setup?mode=pvai';
-  await sleep(600);
+  await open('#/setup?mode=pvai', 'Start Game');
   byText('White').click();
   byText('Easy').click();
   byText('Untimed').click();
   await sleep(100);
-  byText('Start Game').click();
-  await sleep(600);
-  await play(['e2e4']);
-  const replied = await waitFor(() => status().startsWith('Black played'), 30000);
+  await startGame();
+  const replied = (await play(['e2e4'])) && (await waitFor(() => moveCount() >= 2, 30000));
   byText('⚑ Resign').click();
   await sleep(300);
   byText('Resign as White').click();
@@ -467,12 +499,10 @@ const P8_AI_RESIGN = `(async () => {
 const P8_RESUME_START = `(async () => {
   ${P8_HELPERS}
   await createProfile('Remy');
-  location.hash = '#/setup?mode=pvp';
-  await sleep(600);
+  await open('#/setup?mode=pvp', 'Start Game');
   byText('5 + 3').click();
   await sleep(100);
-  byText('Start Game').click();
-  await sleep(600);
+  await startGame();
   await play(['e2e4', 'e7e5', 'g1f3']);
   const saved = await window.chessArena.storage.getSavedGame();
   return { fen: saved.ok ? saved.data?.fen : null };
@@ -485,12 +515,12 @@ const P8_RESUME_CHECK = `(async () => {
     const t = Math.ceil(Math.max(0, ms) / 1000);
     return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
   };
+  // Home appears after the splash screen, which waits for the engine on slow machines.
+  const offered = await waitFor(() => !!byText('Continue Game'), 8000);
   const saved = await window.chessArena.storage.getSavedGame();
   const data = saved.ok ? saved.data : null;
-  const cont = byText('Continue Game');
-  const offered = !!cont;
-  cont?.click();
-  const opened = await waitFor(() => !!document.querySelector('[data-screen=game] [role=application]'), 3000);
+  byText('Continue Game')?.click();
+  const opened = await waitFor(() => !!document.querySelector('[data-screen=game] [role=application]'), 8000);
   await sleep(500);
   const clock = (c) => document.querySelector('[aria-label="' + c + ' clock"]')?.textContent ?? '';
   const moves = document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
