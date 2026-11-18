@@ -25,6 +25,7 @@
     "verify:sandbox": "electron-vite build && node scripts/smoke.mjs",
     "fetch:engine": "node scripts/fetch-engine.mjs",
     "ai:sim": "vitest run --config vitest.sim.config.ts",
+    "screenshots": "electron-vite build && node scripts/screenshots.mjs",
     "dist:win": "node scripts/fetch-engine.mjs win32 x64 && electron-vite build && electron-builder --win --publish never",
     "dist:mac": "node scripts/fetch-engine.mjs darwin arm64 && electron-vite build && electron-builder --mac --publish never -c.mac.identity=-"
   },

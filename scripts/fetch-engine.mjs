@@ -88,7 +88,13 @@ try {
   const archive = join(work, release.asset);
   writeFileSync(archive, bytes);
   // bsdtar (macOS, Windows 10+) reads zip and tar.gz; GNU tar only needs tar.gz here.
-  const tar = spawnSync('tar', ['-xf', archive, '-C', work], { stdio: 'inherit' });
+  // On Windows, call System32's bsdtar explicitly: Git Bash puts GNU tar first on PATH,
+  // which can't read zips and treats "C:\..." as a remote host.
+  const tarBin =
+    process.platform === 'win32'
+      ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+      : 'tar';
+  const tar = spawnSync(tarBin, ['-xf', archive, '-C', work], { stdio: 'inherit' });
   if (tar.status !== 0) throw new Error('Extraction failed');
   mkdirSync(engineDir, { recursive: true });
   copyFileSync(join(work, release.inner), target);
