@@ -17,6 +17,7 @@ import { toast } from '@/store/toastStore';
 import type { Profile } from '@shared/types';
 import { MAX_PROFILES } from '@shared/validate';
 import { cx } from '@/utils/format';
+import { COMPUTER } from '@/utils/platform';
 
 type Editor = { mode: 'add' } | { mode: 'edit'; id: string } | null;
 
@@ -197,7 +198,7 @@ export function ProfileScreen() {
 
       <Card className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <CardTitle>Profiles on this PC</CardTitle>
+          <CardTitle>Profiles on this {COMPUTER}</CardTitle>
           <Button
             size="sm"
             onClick={openAdd}

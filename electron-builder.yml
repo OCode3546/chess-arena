@@ -1,5 +1,6 @@
-# Packaging config (stub — completed in Phase 8: signing, auto-update).
-# Run `node scripts/fetch-engine.mjs win32 x64` first (done by `npm run dist:win`).
+# Packaging for Windows (installer + portable exe) and macOS (dmg + zip).
+# Local builds: `npm run dist:win` / `npm run dist:mac` (they fetch the right Stockfish first).
+# Releases: push a `v*` tag; .github/workflows/release.yml builds both and drafts a GitHub Release.
 appId: com.chessarena.app
 productName: Chess Arena
 copyright: Copyright © 2026 Orville Arrindell
@@ -14,10 +15,15 @@ extraResources:
   - from: LICENSES
     to: LICENSES
     filter: ['**/*']
-  # Native Stockfish lives outside the asar so it can be spawned.
-  - from: resources/engine
-    to: engine
-    filter: ['stockfish-windows-*.exe', 'Copying.txt']
+
+# Update feed: electron-updater reads latest.yml / latest-mac.yml from the GitHub Release.
+# Releases are created as drafts; publishing the draft makes the update visible to users.
+publish:
+  provider: github
+  owner: OCode3546
+  repo: chess-arena
+  releaseType: draft
+
 win:
   target:
     - target: nsis
@@ -25,6 +31,11 @@ win:
     - target: portable
       arch: [x64]
   icon: build/icon.png
+  # Native Stockfish lives outside the asar so it can be spawned.
+  extraResources:
+    - from: resources/engine
+      to: engine
+      filter: ['stockfish-windows-x86-64.exe', 'Copying.txt']
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -34,3 +45,26 @@ nsis:
   artifactName: ChessArena-Setup-${version}.${ext}
 portable:
   artifactName: ChessArena-${version}-portable.${ext}
+
+# Signing: with CSC_LINK / CSC_KEY_PASSWORD (a Developer ID certificate) the app is signed,
+# and notarized when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are also set.
+# Unsigned builds pass `-c.mac.identity=-` (ad-hoc signature) so they launch on Apple Silicon.
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    # The zip is what auto-update downloads on macOS.
+    - target: zip
+      arch: [arm64, x64]
+  icon: build/icon.png
+  category: public.app-category.board-games
+  artifactName: ChessArena-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extraResources:
+    - from: resources/engine
+      to: engine
+      filter: ['stockfish-macos', 'Copying.txt']
+dmg:
+  artifactName: ChessArena-${version}-${arch}.${ext}

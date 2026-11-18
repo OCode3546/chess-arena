@@ -4,6 +4,7 @@ import { MiniBoard } from '@/components/MiniBoard';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Card, CardTitle, Tabs } from '@/components/ui';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '@/config/difficulty';
+import { FULLSCREEN_KEYS, MOD_KEY } from '@/utils/platform';
 import {
   ABANDON_BEFORE_MOVE,
   AI_BONUS,
@@ -110,10 +111,15 @@ function Controls() {
             <Kbd>Esc</Kbd>
           </Row>
           <Row label="Take back (vs AI, if enabled)">
-            <Kbd>Ctrl</Kbd> + <Kbd>Z</Kbd>
+            <Kbd>{MOD_KEY}</Kbd> + <Kbd>Z</Kbd>
           </Row>
           <Row label="Fullscreen">
-            <Kbd>F11</Kbd>
+            {FULLSCREEN_KEYS.map((k, i) => (
+              <span key={k}>
+                {i > 0 && ' + '}
+                <Kbd>{k}</Kbd>
+              </span>
+            ))}
           </Row>
           <Row label="Step through a reviewed game">
             <Kbd>←</Kbd> <Kbd>→</Kbd> <Kbd>Home</Kbd> <Kbd>End</Kbd>

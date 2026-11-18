@@ -1,6 +1,8 @@
 import { pieceUrl } from '@/config/pieces';
 import { useSettings } from '@/store/settingsStore';
 import { cx } from '@/utils/format';
+// macOS draws its own traffic-light buttons at the top left of the window.
+import { isMac } from '@/utils/platform';
 import { useWindowState } from './useWindowState';
 
 function WinButton({
@@ -35,15 +37,15 @@ export function TitleBar() {
   const theme = useSettings((s) => s.settings.theme);
   const update = useSettings((s) => s.update);
   const win = window.chessArena.window;
-
   if (state.fullscreen) return null;
 
   return (
     <header
       className="drag-region relative z-40 flex h-10 shrink-0 items-center border-b border-line bg-bg/60 backdrop-blur"
-      onDoubleClick={() => win.toggleMaximize()}
+      // macOS already zooms the window when its title area is double-clicked.
+      onDoubleClick={() => !isMac && win.toggleMaximize()}
     >
-      <div className="flex items-center gap-2 pl-4">
+      <div className={cx('flex items-center gap-2', isMac ? 'pl-20' : 'pl-4')}>
         <Logo className="h-5 w-5" />
         <span className="font-display text-sm font-bold tracking-tight">Chess Arena</span>
       </div>
@@ -52,7 +54,10 @@ export function TitleBar() {
         type="button"
         onClick={() => update({ theme: theme === 'dark' ? 'light' : 'dark' })}
         onDoubleClick={(e) => e.stopPropagation()}
-        className="no-drag mr-2 flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg"
+        className={cx(
+          'no-drag flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg',
+          isMac ? 'mr-3' : 'mr-2',
+        )}
         aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
         title="Toggle theme"
       >
@@ -81,7 +86,10 @@ export function TitleBar() {
           </svg>
         )}
       </button>
-      <div className="flex h-full" onDoubleClick={(e) => e.stopPropagation()}>
+      <div
+        className={cx('flex h-full', isMac && 'hidden')}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
         <WinButton label="Minimize" onClick={() => win.minimize()}>
           <svg width="10" height="10" viewBox="0 0 10 10">
             <path d="M0 5h10" stroke="currentColor" />

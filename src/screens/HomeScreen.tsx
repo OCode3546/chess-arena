@@ -9,6 +9,46 @@ import { XpBar } from '@/components/XpBar';
 import { describeTimeControl } from '@/config/timeControls';
 import { useActiveProfile, useProfiles } from '@/store/profileStore';
 import { useSession } from '@/store/sessionStore';
+import { installUpdate, openReleasesPage, useUpdates } from '@/store/updateStore';
+import { COMPUTER, isMac } from '@/utils/platform';
+
+/** Shown when a newer release exists; Windows installs it, other builds link to the download. */
+function UpdateBanner() {
+  const { info, dismissedVersion, dismiss } = useUpdates();
+  const { state, mode } = info;
+  if (state.status !== 'available' && state.status !== 'downloaded') return null;
+  if (dismissedVersion === state.version) return null;
+  const ready = state.status === 'downloaded';
+  const manual = mode === 'manual';
+  return (
+    <motion.div
+      variants={item}
+      role="status"
+      data-update-banner
+      className="glass flex items-center gap-3 rounded-2xl px-4 py-3 text-sm"
+    >
+      <span className="flex-1">
+        <b>Chess Arena {state.version}</b> {ready ? 'is ready to install.' : 'is available.'}
+      </span>
+      {ready ? (
+        <Button size="sm" variant="primary" onClick={installUpdate}>
+          Restart &amp; update
+        </Button>
+      ) : manual ? (
+        <Button size="sm" variant="primary" onClick={openReleasesPage}>
+          Download
+        </Button>
+      ) : (
+        <Button size="sm" variant="primary" onClick={() => window.chessArena.updater.download()}>
+          Update
+        </Button>
+      )}
+      <Button size="sm" variant="ghost" onClick={() => dismiss(state.version)}>
+        Later
+      </Button>
+    </motion.div>
+  );
+}
 
 const item = {
   hidden: { opacity: 0, y: 12 },
@@ -150,9 +190,13 @@ export function HomeScreen() {
             <Logo className="h-16 w-16 shadow-2xl" />
             <div>
               <h1 className="font-display text-5xl font-bold tracking-tight">Chess Arena</h1>
-              <p className="mt-1 text-muted">Play a friend on this PC or challenge the computer.</p>
+              <p className="mt-1 text-muted">
+                Play a friend on this {COMPUTER} or challenge the computer.
+              </p>
             </div>
           </motion.div>
+
+          <UpdateBanner />
 
           <motion.div variants={item} className="flex flex-col gap-3">
             {savedGame && (
@@ -187,15 +231,18 @@ export function HomeScreen() {
               className="justify-between"
             >
               <span>Play vs Player</span>
-              <span className="text-sm font-medium text-muted">Local · same PC</span>
+              <span className="text-sm font-medium text-muted">Local · same {COMPUTER}</span>
             </Button>
           </motion.div>
 
-          <motion.div variants={item}>
-            <Button variant="ghost" onClick={() => window.chessArena.app.quit()}>
-              Quit
-            </Button>
-          </motion.div>
+          {/* macOS apps quit from the menu (Cmd+Q). */}
+          {!isMac && (
+            <motion.div variants={item}>
+              <Button variant="ghost" onClick={() => window.chessArena.app.quit()}>
+                Quit
+              </Button>
+            </motion.div>
+          )}
         </div>
 
         {/* Right: player card + secondary nav */}

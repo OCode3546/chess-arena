@@ -1,0 +1,131 @@
+# Builds the Windows and macOS apps, runs the end-to-end smoke suite against the packaged
+# apps, and (for `v*` tags) attaches everything to a *draft* GitHub Release.
+# Publishing the draft on GitHub is what makes the update visible to installed apps.
+#
+# Optional signing secrets (builds work without them, but show OS warnings):
+#   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
+#   macOS:   MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # Manual runs build and test both apps and keep the files as workflow artifacts.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+      - name: Fetch Stockfish
+        run: |
+          if [ "${{ matrix.platform }}" = win ]; then
+            node scripts/fetch-engine.mjs win32 x64
+          else
+            node scripts/fetch-engine.mjs darwin arm64
+          fi
+      - run: npm test
+      - run: npm run build
+
+      - name: Package (Windows)
+        if: matrix.platform == 'win'
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          [ -n "$CSC_LINK" ] || unset CSC_LINK CSC_KEY_PASSWORD
+          npx electron-builder --win --publish never
+
+      - name: Package (macOS)
+        if: matrix.platform == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          extra=()
+          if [ -z "$CSC_LINK" ]; then
+            # No certificate: ad-hoc sign so the app still opens on Apple Silicon.
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            extra=(-c.mac.identity=-)
+          fi
+          [ -n "$APPLE_ID" ] || unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          npx electron-builder --mac --publish never "${extra[@]}"
+
+      - name: Smoke test the packaged app
+        run: |
+          v=$(node -p "require('./package.json').version")
+          # Relative paths: smoke.mjs resolves them (bash's $PWD is a Unix path on Windows).
+          if [ "${{ matrix.platform }}" = win ]; then
+            export SMOKE_APP="release/$v/win-unpacked/Chess Arena.exe"
+          else
+            export SMOKE_APP="release/$v/mac-arm64/Chess Arena.app/Contents/MacOS/Chess Arena"
+          fi
+          node scripts/smoke.mjs
+
+      - name: Collect release files
+        run: |
+          v=$(node -p "require('./package.json').version")
+          mkdir dist-upload
+          cd "release/$v"
+          cp -v *.exe *.dmg *.zip *.blockmap latest*.yml ../../dist-upload/ 2>/dev/null || true
+          ls -la ../../dist-upload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chess-arena-${{ matrix.platform }}
+          path: dist-upload/*
+          if-no-files-found: error
+
+  release:
+    name: Draft GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+      - name: Check the tag matches package.json
+        run: |
+          v=$(node -p "require('./package.json').version")
+          [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "Tag $GITHUB_REF_NAME != v$v"; exit 1; }
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la files
+          gh release create "$GITHUB_REF_NAME" files/* \
+            --draft \
+            --title "Chess Arena ${GITHUB_REF_NAME#v}" \
+            --notes-file .github/release-notes.md

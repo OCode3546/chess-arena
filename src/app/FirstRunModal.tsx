@@ -5,6 +5,7 @@ import { Button, Modal } from '@/components/ui';
 import { AVATARS } from '@/config/avatars';
 import { MAX_LEVEL } from '@/config/progression';
 import { useProfiles } from '@/store/profileStore';
+import { COMPUTER } from '@/utils/platform';
 
 /** First launch: create a profile (or skip with a default one) and learn how XP works. */
 export function FirstRunModal({ open }: { open: boolean }) {
@@ -47,7 +48,9 @@ export function FirstRunModal({ open }: { open: boolean }) {
             the day.
           </li>
           <li>Hints and takebacks cost 25% of a game’s XP each.</li>
-          <li>Level up to {MAX_LEVEL}; you can add more profiles later for friends on this PC.</li>
+          <li>
+            Level up to {MAX_LEVEL}; you can add more profiles later for friends on this {COMPUTER}.
+          </li>
         </ul>
       </div>
     </Modal>

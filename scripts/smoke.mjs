@@ -4,8 +4,10 @@
 // profile → game → XP → level-up flow across relaunches, that rewards render for all
 // 50 levels and equipped cosmetics apply instantly and survive a relaunch, and the
 // history / review / PGN export, settings, sound, backup export → reset → import,
-// How to Play and About flows.
-// Run via `npm run verify:sandbox` (`SMOKE_KEEP_PGN=<file>` keeps the exported PGN).
+// How to Play and About flows, resigning against the AI and resuming an unfinished game
+// after a relaunch.
+// Run via `npm run verify:sandbox` (`SMOKE_KEEP_PGN=<file>` keeps the exported PGN), or
+// against a packaged build with `SMOKE_APP=<path to the app executable> node scripts/smoke.mjs`.
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
@@ -17,7 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import electron from 'electron';
 
 const dirs = [];
@@ -27,6 +29,8 @@ const tempDir = (prefix) => {
   return d;
 };
 const userData = tempDir('chess-arena-smoke-');
+const SMOKE_APP = process.env.SMOKE_APP ? resolve(process.env.SMOKE_APP) : undefined;
+if (SMOKE_APP && !existsSync(SMOKE_APP)) throw new Error(`SMOKE_APP not found: ${SMOKE_APP}`);
 
 function run(action, extraEnv = {}) {
   const env = {
@@ -38,7 +42,10 @@ function run(action, extraEnv = {}) {
   };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_RENDERER_URL;
-  const res = spawnSync(electron, ['.'], { env, encoding: 'utf8', timeout: 120_000 });
+  // SMOKE_APP=<packaged executable> runs the checks against an installed/packaged build.
+  const res = SMOKE_APP
+    ? spawnSync(SMOKE_APP, [], { env, encoding: 'utf8', timeout: 120_000 })
+    : spawnSync(electron, ['.'], { env, encoding: 'utf8', timeout: 120_000 });
   const line = `${res.stdout}`.split('\n').find((l) => l.startsWith('SMOKE '));
   if (!line) {
     console.error(res.stdout, res.stderr);
@@ -402,6 +409,97 @@ const P7_PAGES = `(async () => {
   return { tabs, pieceDiagrams, xpTable, version, changelog, license };
 })()`;
 
+// Phase 8 helpers: make a profile through the first-run dialog; click squares (White at the bottom).
+const P8_HELPERS = `
+  ${HELPERS}
+  const createProfile = async (name) => {
+    const input = document.querySelector('[role=dialog] input');
+    if (!input) return false;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, name);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    byText('Create profile').click();
+    await sleep(500);
+    return true;
+  };
+  const click = (sq) => {
+    const board = document.querySelector('[role=application]');
+    const r = board.getBoundingClientRect();
+    const o = { bubbles: true, clientX: r.left + (sq.charCodeAt(0) - 96.5) * (r.width / 8),
+      clientY: r.top + (8.5 - Number(sq[1])) * (r.height / 8), button: 0, pointerId: 1, isPrimary: true };
+    board.dispatchEvent(new PointerEvent('pointerdown', o));
+    board.dispatchEvent(new PointerEvent('pointerup', o));
+  };
+  const play = async (moves) => {
+    for (const m of moves) { click(m.slice(0, 2)); await sleep(60); click(m.slice(2)); await sleep(300); }
+  };
+  const status = () => document.querySelector('[role=application] [aria-live]')?.textContent ?? '';
+`;
+
+// Phase 8: resign against the AI; the loss is recorded. Also: dev/smoke builds don't self-update.
+const P8_AI_RESIGN = `(async () => {
+  ${P8_HELPERS}
+  await createProfile('Rex');
+  const updater = await window.chessArena.updater.getInfo();
+  location.hash = '#/setup?mode=pvai';
+  await sleep(600);
+  byText('White').click();
+  byText('Easy').click();
+  byText('Untimed').click();
+  await sleep(100);
+  byText('Start Game').click();
+  await sleep(600);
+  await play(['e2e4']);
+  const replied = await waitFor(() => status().startsWith('Black played'), 30000);
+  byText('⚑ Resign').click();
+  await sleep(300);
+  byText('Resign as White').click();
+  const over = await waitFor(() => document.body.textContent.includes('wins by resignation'), 3000);
+  const defeat = document.body.textContent.includes('Defeat');
+  await sleep(500);
+  const history = await window.chessArena.storage.getHistory();
+  const h = history[0];
+  return { updaterMode: updater.mode, replied, over, defeat,
+    record: h && { mode: h.mode, result: h.result, reason: h.reason } };
+})()`;
+
+// Phase 8, launch 1: a timed local game left unfinished after three moves.
+const P8_RESUME_START = `(async () => {
+  ${P8_HELPERS}
+  await createProfile('Remy');
+  location.hash = '#/setup?mode=pvp';
+  await sleep(600);
+  byText('5 + 3').click();
+  await sleep(100);
+  byText('Start Game').click();
+  await sleep(600);
+  await play(['e2e4', 'e7e5', 'g1f3']);
+  const saved = await window.chessArena.storage.getSavedGame();
+  return { fen: saved.ok ? saved.data?.fen : null };
+})()`;
+
+// Launch 2: Home offers Continue Game, which restores the position and both clocks.
+const P8_RESUME_CHECK = `(async () => {
+  ${P8_HELPERS}
+  const formatClock = (ms) => {
+    const t = Math.ceil(Math.max(0, ms) / 1000);
+    return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+  };
+  const saved = await window.chessArena.storage.getSavedGame();
+  const data = saved.ok ? saved.data : null;
+  const cont = byText('Continue Game');
+  const offered = !!cont;
+  cont?.click();
+  const opened = await waitFor(() => !!document.querySelector('[data-screen=game] [role=application]'), 3000);
+  await sleep(500);
+  const clock = (c) => document.querySelector('[aria-label="' + c + ' clock"]')?.textContent ?? '';
+  const moves = document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
+  return { offered, opened, moves, fen: data?.fen,
+    clocks: { w: clock('White'), b: clock('Black') },
+    expected: data && { w: formatClock(data.clocks.w), b: formatClock(data.clocks.b) },
+    clockStarted: data?.clockStarted };
+})()`;
+
 function stepsRun(userData, steps, extraEnv = {}) {
   const file = join(tempDir('chess-arena-steps-'), 'steps.json');
   writeFileSync(file, JSON.stringify(steps));
@@ -418,7 +516,8 @@ function engineProcesses() {
     const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq stockfish*'], { encoding: 'utf8' });
     return (r.stdout.match(/stockfish/gi) ?? []).length;
   }
-  const r = spawnSync('pgrep', ['-f', 'resources/engine/stockfish'], { encoding: 'utf8' });
+  // Matches both the dev path (resources/engine/) and the packaged one (Resources/engine/).
+  const r = spawnSync('pgrep', ['-f', 'engine/stockfish'], { encoding: 'utf8' });
   return r.stdout.trim() ? r.stdout.trim().split('\n').length : 0;
 }
 
@@ -444,7 +543,8 @@ try {
   check('no Buffer in renderer', first.bufferGlobal === 'undefined');
   check(
     'only the typed API is exposed',
-    JSON.stringify(first.apiKeys) === '["app","dialog","engine","storage","window"]',
+    JSON.stringify(first.apiKeys) === '["app","dialog","engine","storage","updater","window"]',
+    first.apiKeys,
   );
   for (const [route, ok] of Object.entries(first.routes))
     check(`route ${route} renders`, ok === true);
@@ -665,6 +765,39 @@ try {
     'About shows version, changelog and license texts',
     pages?.version === version && pages?.changelog === true && pages?.license === true,
     pages && { version: pages.version, changelog: pages.changelog, license: pages.license },
+  );
+
+  // Phase 8: resign vs AI, and quit/relaunch resume of an unfinished timed game.
+  const [resign] = stepsRun(tempDir('chess-arena-p8-resign-'), [{ js: P8_AI_RESIGN }]);
+  check('smoke/dev builds do not self-update', resign?.updaterMode === 'none', resign?.updaterMode);
+  check('AI replies before the resignation', resign?.replied === true);
+  check(
+    'resigning vs AI ends the game as a defeat',
+    resign?.over === true && resign?.defeat === true,
+    resign && { over: resign.over, defeat: resign.defeat },
+  );
+  check(
+    'the resignation is saved to history',
+    resign?.record?.mode === 'pvai' &&
+      resign?.record?.result === '0-1' &&
+      resign?.record?.reason === 'resignation',
+    resign?.record,
+  );
+  const resumeData = tempDir('chess-arena-p8-resume-');
+  const [started] = stepsRun(resumeData, [{ js: P8_RESUME_START }]);
+  const [resumed] = stepsRun(resumeData, [{ js: P8_RESUME_CHECK }, { shot: 'resumed-game' }]);
+  check('unfinished game was auto-saved', !!started?.fen, started);
+  check('Home offers Continue Game after relaunch', resumed?.offered === true);
+  check(
+    'Continue Game restores the position',
+    resumed?.opened === true && resumed?.moves === 3 && resumed?.fen === started?.fen,
+    resumed && { moves: resumed.moves, fen: resumed.fen },
+  );
+  check(
+    'Continue Game restores both clocks',
+    resumed?.clockStarted === true &&
+      JSON.stringify(resumed?.clocks) === JSON.stringify(resumed?.expected),
+    resumed && { shown: resumed.clocks, saved: resumed.expected },
   );
 } finally {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });

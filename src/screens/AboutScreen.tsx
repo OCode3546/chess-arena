@@ -122,8 +122,8 @@ export function AboutScreen() {
         <Card className="flex flex-col">
           <CardTitle>Chess Arena</CardTitle>
           <p className="mt-2 text-sm text-muted">
-            A modern 2D chess game for Windows. Play a friend on the same PC or challenge the
-            computer — fully offline.
+            A modern 2D chess game for Windows and macOS. Play a friend on the same computer or
+            challenge the AI — fully offline.
           </p>
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="text-muted">Version</dt>

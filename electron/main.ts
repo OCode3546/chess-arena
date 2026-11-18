@@ -7,7 +7,9 @@ import {
   ipcMain,
   Menu,
   shell,
+  type BrowserWindowConstructorOptions,
   type FileFilter,
+  type MenuItemConstructorOptions,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from 'electron';
@@ -44,9 +46,11 @@ import {
   setSettings,
 } from './storage';
 import { runSmokeTest } from './smoke';
+import { Updater } from './updater';
 
 const isDev = !app.isPackaged && !!process.env['ELECTRON_RENDERER_URL'];
 const smokeTest = process.env['CHESS_ARENA_SMOKE'] === '1';
+const isMac = process.platform === 'darwin';
 
 const LICENSE_FILES: Record<LicenseId, string> = {
   stockfish: 'Stockfish-GPL-3.0.txt',
@@ -66,6 +70,17 @@ if (process.env['CHESS_ARENA_USER_DATA']) {
 let mainWindow: BrowserWindow | null = null;
 let allowClose = false;
 let engine: NativeEngine | null = null;
+const updater = new Updater({
+  autoUpdate: () => getSettings().autoUpdate,
+  publish: (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.updaterChanged, info);
+    }
+  },
+  beforeInstall: () => {
+    allowClose = true;
+  },
+});
 
 /** Bundled Stockfish for this OS (`CHESS_ARENA_ENGINE_PATH` overrides it for testing). */
 function engineBinaryPath(): string | null {
@@ -109,12 +124,60 @@ if (!app.requestSingleInstanceLock()) {
 function start(): void {
   initStorage();
   engine = new NativeEngine(engineBinaryPath());
-  Menu.setApplicationMenu(null);
+  // Windows draws its own title bar buttons; macOS needs a real menu for Cmd+Q, copy/paste etc.
+  Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate(macMenu()) : null);
   registerIpc();
   createWindow();
+  void updater.init();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}
+
+/** Screens the main process may ask the renderer to show. */
+function navigate(path: '/settings' | '/about'): void {
+  if (!mainWindow) return;
+  mainWindow.show();
+  mainWindow.webContents.send(IPC.appNavigate, path);
+}
+
+function macMenu(): MenuItemConstructorOptions[] {
+  return [
+    {
+      label: app.name,
+      submenu: [
+        { label: `About ${app.name}`, click: () => navigate('/about') },
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            navigate('/settings');
+            updater.check();
+          },
+        },
+        { type: 'separator' },
+        { label: 'Settings…', accelerator: 'Cmd+,', click: () => navigate('/settings') },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [{ role: 'togglefullscreen' }],
+    },
+    { role: 'windowMenu' },
+  ];
+}
+
+/** Native traffic lights on macOS; a frameless window with our own buttons elsewhere. */
+function windowChrome(): BrowserWindowConstructorOptions {
+  return isMac
+    ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 12 } }
+    : { frame: false };
 }
 
 function windowState(win: BrowserWindow): WindowState {
@@ -128,7 +191,7 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 680,
     show: false,
-    frame: false,
+    ...windowChrome(),
     backgroundColor: getSettings().theme === 'light' ? '#f4f5fb' : '#0e1018',
     title: 'Chess Arena',
     icon: app.isPackaged ? undefined : join(__dirname, '../../build/icon.png'),
@@ -170,9 +233,9 @@ function createWindow(): void {
 
   hardenWebContents(win);
 
-  // F11 fullscreen works even when the renderer is busy.
+  // F11 fullscreen works even when the renderer is busy (macOS uses Ctrl+Cmd+F from the menu).
   win.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F11') {
+    if (!isMac && input.type === 'keyDown' && input.key === 'F11') {
       event.preventDefault();
       win.setFullScreen(!win.isFullScreen());
     }
@@ -345,6 +408,11 @@ function registerIpc(): void {
     return engine.search(req);
   });
   on(IPC.engineStop, () => engine?.stop());
+
+  handle(IPC.updaterGetInfo, () => updater.info);
+  on(IPC.updaterCheck, () => updater.check());
+  on(IPC.updaterDownload, () => updater.download());
+  on(IPC.updaterInstall, () => updater.install());
 }
 
 function licensesDir(): string {
@@ -415,5 +483,8 @@ app.on('window-all-closed', () => {
 });
 
 // Never leave a Stockfish process behind.
-app.on('will-quit', () => engine?.dispose());
+app.on('will-quit', () => {
+  updater.dispose();
+  engine?.dispose();
+});
 process.on('exit', () => engine?.dispose());

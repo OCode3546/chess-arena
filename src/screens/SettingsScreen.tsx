@@ -11,6 +11,8 @@ import { unlockLevel, type RewardKind } from '@/config/rewards';
 import { exportData, importData, resetProgress } from '@/store/dataActions';
 import { useActiveProfile, useCosmetics, useProfiles } from '@/store/profileStore';
 import { useSettings } from '@/store/settingsStore';
+import { installUpdate, openReleasesPage, useUpdates } from '@/store/updateStore';
+import { COMPUTER, FULLSCREEN_KEYS, isMac } from '@/utils/platform';
 import { cx } from '@/utils/format';
 
 const ACCENT_SWATCH: Record<Accent, string> = {
@@ -140,10 +142,89 @@ function SoundSettings() {
   );
 }
 
+/** "Check for updates" row: current status plus the next action for this kind of build. */
+function UpdateRow() {
+  const { mode, state } = useUpdates((s) => s.info);
+  const updater = window.chessArena.updater;
+
+  if (mode === 'none') {
+    return (
+      <SettingRow label="Check for updates" description="Available in installed release builds">
+        <Button size="sm" disabled>
+          Check now
+        </Button>
+      </SettingRow>
+    );
+  }
+
+  let description: string;
+  let action = (
+    <Button size="sm" onClick={() => updater.check()}>
+      Check now
+    </Button>
+  );
+  switch (state.status) {
+    case 'checking':
+      description = 'Checking…';
+      action = (
+        <Button size="sm" disabled>
+          Check now
+        </Button>
+      );
+      break;
+    case 'up-to-date':
+      description = 'You have the latest version';
+      break;
+    case 'available':
+      description = `Version ${state.version} is available`;
+      action =
+        mode === 'manual' ? (
+          <Button size="sm" variant="primary" onClick={openReleasesPage}>
+            Download
+          </Button>
+        ) : (
+          <Button size="sm" variant="primary" onClick={() => updater.download()}>
+            Update
+          </Button>
+        );
+      break;
+    case 'downloading':
+      description = `Downloading ${state.version}… ${state.percent}%`;
+      action = (
+        <Button size="sm" disabled>
+          Update
+        </Button>
+      );
+      break;
+    case 'downloaded':
+      description = `Version ${state.version} is ready to install`;
+      action = (
+        <Button size="sm" variant="primary" onClick={installUpdate}>
+          Restart &amp; update
+        </Button>
+      );
+      break;
+    case 'error':
+      description = state.message;
+      break;
+    default:
+      description =
+        mode === 'manual'
+          ? 'New versions are downloaded from the Chess Arena website'
+          : 'Look for a newer version now';
+  }
+  return (
+    <SettingRow label="Check for updates" description={description}>
+      {action}
+    </SettingRow>
+  );
+}
+
 type Confirm = null | 'import' | 'reset';
 
 function AppSettings() {
   const { settings, update } = useSettings();
+  const updateMode = useUpdates((s) => s.info.mode);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const run = async (action: () => Promise<unknown>) => {
@@ -163,18 +244,18 @@ function AppSettings() {
         <div>
           <Toggle
             label="Update automatically"
-            description="Download new versions in the background"
+            description={
+              updateMode === 'manual'
+                ? 'Check for new versions when the app starts'
+                : 'Download new versions in the background'
+            }
             checked={settings.autoUpdate}
             onChange={(autoUpdate) => update({ autoUpdate })}
           />
-          <SettingRow label="Check for updates" description="Available in installed release builds">
-            <Button size="sm" disabled>
-              Check now
-            </Button>
-          </SettingRow>
+          <UpdateRow />
           <Toggle
             label="Launch at startup"
-            description="Open Chess Arena when you sign in to Windows"
+            description={`Open Chess Arena when you sign in to ${isMac ? 'your Mac' : 'Windows'}`}
             checked={settings.launchAtStartup}
             onChange={(launchAtStartup) => update({ launchAtStartup })}
           />
@@ -221,8 +302,8 @@ function AppSettings() {
           </>
         }
       >
-        The profiles, game history and settings on this PC will be <b>replaced</b> by the ones in
-        the backup file. Export first if you want to keep the current data.
+        The profiles, game history and settings on this {COMPUTER} will be <b>replaced</b> by the
+        ones in the backup file. Export first if you want to keep the current data.
       </Modal>
 
       <Modal
@@ -317,7 +398,7 @@ export function SettingsScreen() {
           />
           <Toggle
             label="Fullscreen"
-            description="Also available with F11"
+            description={`Also available with ${FULLSCREEN_KEYS.join('+')}`}
             checked={fullscreen}
             onChange={() => window.chessArena.window.toggleFullscreen()}
           />

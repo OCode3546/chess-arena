@@ -10,10 +10,15 @@ export const LINKS = {
   spaceGrotesk: 'https://github.com/floriankarsten/space-grotesk',
 } as const;
 
-/** The project's own pages. Fill in before a public release; empty links are hidden in About. */
+/** The public GitHub repository: source code, downloads and the auto-update feed. */
+export const REPO = { owner: 'OCode3546', name: 'chess-arena' } as const;
+const REPO_URL = `https://github.com/${REPO.owner}/${REPO.name}`;
+
+/** The project's own pages; empty links are hidden in About. */
 export const PROJECT_LINKS = {
-  website: '',
-  support: '',
+  website: REPO_URL,
+  support: `${REPO_URL}/issues`,
+  releases: `${REPO_URL}/releases/latest`,
 };
 
 /** The developer credited in About. */

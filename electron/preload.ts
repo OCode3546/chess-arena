@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '@shared/ipc';
-import type { ChessArenaApi, WindowState } from '@shared/types';
+import type { ChessArenaApi, UpdaterInfo, WindowState } from '@shared/types';
 
 function subscribe<T extends unknown[]>(channel: string, cb: (...args: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]) => cb(...(args as T));
@@ -10,8 +10,10 @@ function subscribe<T extends unknown[]>(channel: string, cb: (...args: T) => voi
 
 const api: ChessArenaApi = {
   app: {
+    platform: process.platform,
     getVersion: () => ipcRenderer.invoke(IPC.appVersion),
     quit: () => ipcRenderer.send(IPC.appQuit),
+    onNavigate: (cb) => subscribe<[string]>(IPC.appNavigate, cb),
     getStartupIssues: () => ipcRenderer.invoke(IPC.appStartupIssues),
     openDataFolder: () => ipcRenderer.send(IPC.appOpenDataFolder),
     getLicense: (id) => ipcRenderer.invoke(IPC.appLicense, id),
@@ -47,6 +49,13 @@ const api: ChessArenaApi = {
     start: () => ipcRenderer.invoke(IPC.engineStart),
     bestMove: (req) => ipcRenderer.invoke(IPC.engineBestMove, req),
     stop: () => ipcRenderer.send(IPC.engineStop),
+  },
+  updater: {
+    getInfo: () => ipcRenderer.invoke(IPC.updaterGetInfo),
+    check: () => ipcRenderer.send(IPC.updaterCheck),
+    download: () => ipcRenderer.send(IPC.updaterDownload),
+    install: () => ipcRenderer.send(IPC.updaterInstall),
+    onChange: (cb) => subscribe<[UpdaterInfo]>(IPC.updaterChanged, cb),
   },
 };
 

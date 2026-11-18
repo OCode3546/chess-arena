@@ -8,6 +8,7 @@ import { MoveList } from '@/game/MoveList';
 import { PlayerStrip } from '@/game/PlayerStrip';
 import { other, REASON_LABEL, type GameResult } from '@/game/rules';
 import { aiColorOf, undoablePlies, useGameStore } from '@/store/gameStore';
+import { MOD_KEY } from '@/utils/platform';
 import { useMediaQuery } from '@/utils/useMediaQuery';
 
 type Dialog = null | 'resign' | 'draw';
@@ -130,7 +131,7 @@ export function GameScreen() {
               <Button
                 onClick={() => game().undo()}
                 disabled={!canUndo}
-                title="Take back your last move (Ctrl+Z) · costs XP"
+                title={`Take back your last move (${MOD_KEY}+Z) · costs XP`}
               >
                 ↶ Undo
               </Button>

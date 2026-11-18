@@ -1,6 +1,14 @@
 /** Release notes shown in About, newest first. */
 export const CHANGELOG: { version: string; notes: string[] }[] = [
   {
+    version: '0.8.0',
+    notes: [
+      'Downloadable installers for Windows and macOS (Apple Silicon and Intel)',
+      'Automatic updates on Windows; an "update available" banner with a download link elsewhere',
+      'Native macOS window buttons and app menu',
+    ],
+  },
+  {
     version: '0.7.0',
     notes: [
       'Game history with move-by-move review and PGN export',

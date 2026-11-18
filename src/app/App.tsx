@@ -21,6 +21,8 @@ import { useProfiles, wireProgression } from '@/store/profileStore';
 import { loadProfiles, useSession, wireGamePersistence } from '@/store/sessionStore';
 import { useSettings } from '@/store/settingsStore';
 import { toast } from '@/store/toastStore';
+import { wireUpdates } from '@/store/updateStore';
+import { COMPUTER } from '@/utils/platform';
 import { FirstRunModal } from './FirstRunModal';
 import { TitleBar } from './TitleBar';
 
@@ -29,7 +31,7 @@ const SPLASH_MIN_MS = 700;
 const ENGINE_WAIT_MS = 2500;
 
 const BACKEND_NOTICE = {
-  wasm: 'Stockfish could not start on this PC — using the WebAssembly version instead.',
+  wasm: `Stockfish could not start on this ${COMPUTER} — using the WebAssembly version instead.`,
   minimax: 'Stockfish is unavailable — using the basic built-in engine.',
 } as const;
 
@@ -44,6 +46,10 @@ export function App() {
     wireGamePersistence();
     const offProgression = wireProgression();
     const offSounds = wireSounds();
+    const offUpdates = wireUpdates();
+    const offNavigate = window.chessArena.app.onNavigate((path) => {
+      location.hash = `#${path}`;
+    });
     const offAchievements = useProfiles.subscribe((s, prev) => {
       if (!s.lastMatch || s.lastMatch === prev.lastMatch) return;
       const several = s.lastMatch.awards.length > 1;
@@ -90,6 +96,8 @@ export function App() {
       offBackend();
       offProgression();
       offSounds();
+      offUpdates();
+      offNavigate();
       offAchievements();
     };
   }, []);
@@ -97,6 +105,7 @@ export function App() {
   // Theme tokens live on <html>.
   useEffect(() => {
     const root = document.documentElement;
+    root.dataset.platform = window.chessArena.app.platform;
     root.dataset.theme = theme;
     root.dataset.accent = accent;
     root.dataset.motion = animations ? 'on' : 'off';

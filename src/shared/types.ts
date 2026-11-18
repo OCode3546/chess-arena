@@ -187,6 +187,30 @@ export type ImportResult =
   | { status: 'canceled' }
   | { status: 'error'; message: string };
 
+/**
+ * How this copy of the app can update itself.
+ * - `auto`: download in the background and install on restart (Windows installer, signed Mac app).
+ * - `manual`: only tell the user and link to the download page (portable exe, unsigned Mac app).
+ * - `none`: development build; updates are not checked.
+ */
+export type UpdateMode = 'auto' | 'manual' | 'none';
+
+export type UpdateState =
+  | { status: 'idle' }
+  | { status: 'checking' }
+  | { status: 'up-to-date'; checkedAt: number }
+  | { status: 'available'; version: string }
+  | { status: 'downloading'; version: string; percent: number }
+  | { status: 'downloaded'; version: string }
+  | { status: 'error'; message: string };
+
+export interface UpdaterInfo {
+  mode: UpdateMode;
+  state: UpdateState;
+  /** Page where a new version can be downloaded by hand. */
+  releasesUrl: string;
+}
+
 /** License texts bundled in `LICENSES/` that the About screen can show. */
 export const LICENSE_IDS = ['stockfish', 'gpl-2', 'chess-js', 'inter', 'space-grotesk'] as const;
 export type LicenseId = (typeof LICENSE_IDS)[number];
@@ -194,8 +218,12 @@ export type LicenseId = (typeof LICENSE_IDS)[number];
 /** The complete API the preload script exposes on `window.chessArena`. */
 export interface ChessArenaApi {
   app: {
+    /** The OS the app runs on (`win32`, `darwin`, `linux`). */
+    platform: string;
     getVersion(): Promise<string>;
     quit(): void;
+    /** Main-process requests to show a screen (e.g. the macOS "Settings…" menu item). */
+    onNavigate(cb: (path: string) => void): () => void;
     /** Storage files that were unreadable at startup and were reset. */
     getStartupIssues(): Promise<string[]>;
     /** Show the user-data folder in the system file manager. */
@@ -247,5 +275,15 @@ export interface ChessArenaApi {
     bestMove(req: SearchRequest): Promise<SearchResult>;
     /** Finish the current search early (its result is still delivered). */
     stop(): void;
+  };
+  updater: {
+    getInfo(): Promise<UpdaterInfo>;
+    /** Look for a newer release now (in `auto` mode with auto-update on, it also downloads). */
+    check(): void;
+    /** Start downloading an available update (`auto` mode). */
+    download(): void;
+    /** Quit and install a downloaded update. The renderer saves any game first. */
+    install(): void;
+    onChange(cb: (info: UpdaterInfo) => void): () => void;
   };
 }
