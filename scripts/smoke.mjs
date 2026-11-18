@@ -86,8 +86,9 @@ const AI_GAME = `(async () => {
     board.dispatchEvent(new PointerEvent('pointerdown', o));
     board.dispatchEvent(new PointerEvent('pointerup', o));
   };
+  // The board's data-ply (the move list is behind a tab in narrow windows, e.g. on CI).
   const moveCount = () =>
-    document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
+    Number(document.querySelector('[data-screen=game] [role=application]')?.dataset.ply ?? 0);
   // The board takes clicks only once React has re-rendered it as movable (slow CI machines
   // need longer), so retry until the move actually lands.
   const tryMove = async (from, to) => {
@@ -442,8 +443,9 @@ const P8_HELPERS = `
     board.dispatchEvent(new PointerEvent('pointerdown', o));
     board.dispatchEvent(new PointerEvent('pointerup', o));
   };
+  // The board's data-ply (the move list is behind a tab in narrow windows, e.g. on CI).
   const moveCount = () =>
-    document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
+    Number(document.querySelector('[data-screen=game] [role=application]')?.dataset.ply ?? 0);
   // The board takes clicks only once React has re-rendered it as movable, so retry each
   // move until the move list grows (slow CI machines need several tries).
   const play = async (moves) => {
@@ -523,7 +525,7 @@ const P8_RESUME_CHECK = `(async () => {
   const opened = await waitFor(() => !!document.querySelector('[data-screen=game] [role=application]'), 8000);
   await sleep(500);
   const clock = (c) => document.querySelector('[aria-label="' + c + ' clock"]')?.textContent ?? '';
-  const moves = document.querySelectorAll('[data-screen=game] ol[aria-label=Moves] button').length;
+  const moves = moveCount();
   return { offered, opened, moves, fen: data?.fen,
     clocks: { w: clock('White'), b: clock('Black') },
     expected: data && { w: formatClock(data.clocks.w), b: formatClock(data.clocks.b) },

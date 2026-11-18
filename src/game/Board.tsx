@@ -408,6 +408,8 @@ export function Board({
       <div
         ref={boardRef}
         role="application"
+        // Moves played so far (tests use this; the move list is hidden in narrow windows).
+        data-ply={history.length}
         data-board={look.board}
         data-piece-set={look.pieceSet}
         aria-label={
