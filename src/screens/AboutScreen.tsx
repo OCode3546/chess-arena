@@ -19,8 +19,9 @@ const CREDITS: Credit[] = [
   {
     name: 'Chess Arena (design & development)',
     author: DEVELOPER.name,
-    license: 'Original work',
-    source: DEVELOPER.github,
+    license: 'GPL-3.0',
+    licenseId: 'stockfish',
+    source: PROJECT_LINKS.website,
   },
   {
     name: 'Stockfish 19 (chess engine)',

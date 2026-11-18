@@ -92,6 +92,10 @@ tests/           unit tests
 spec.md          product spec and build phases
 ```
 
-## Credits and licenses
+## License
+
+Chess Arena is free software under the [GNU General Public License v3.0](LICENSE): you may use, study, share and modify it, and versions you distribute must stay under the same license with their source code available.
+
+## Credits
 
 Chess Arena bundles [Stockfish](https://stockfishchess.org/) (GPL-3.0, [source](https://github.com/official-stockfish/Stockfish)), [chess.js](https://github.com/jhlywa/chess.js) (BSD-2-Clause), the Cburnett and Merida piece sets, and the Inter and Space Grotesk fonts (OFL-1.1). See [CREDITS.md](CREDITS.md) and the [LICENSES](LICENSES/) folder; the license texts are also viewable in the app under **About**.

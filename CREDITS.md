@@ -5,6 +5,9 @@
 Chess Arena is designed and developed by **Orville Arrindell** (CodeGorilla) —
 [github.com/OCode3546](https://github.com/OCode3546).
 
+Chess Arena itself is free software, licensed under the **GNU General Public License v3.0**
+(see [`LICENSE`](LICENSE)). Its source code is at https://github.com/OCode3546/chess-arena.
+
 ## Assets and libraries
 
 | Asset                         | Author                            | License                                             | Source                                                                |
