@@ -1,0 +1,32 @@
+# Uptime check for the production game server: every 15 minutes, /health must answer "ok".
+# A failed run (server down, draining or unreachable) shows up red in Actions and GitHub emails
+# the repository owner. The run history doubles as the uptime record for the server.
+name: Uptime
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: GET /health
+        env:
+          HEALTH_URL: https://play.chessarena.dpdns.org/health
+        run: |
+          for attempt in 1 2 3; do
+            body=$(curl -fsS --max-time 15 "$HEALTH_URL") && break
+            body=""
+            sleep 20
+          done
+          echo "$body"
+          [ -n "$body" ] || { echo "::error::Game server unreachable"; exit 1; }
+          echo "$body" | grep -q '"status":"ok"' || { echo "::error::Game server not ok"; exit 1; }
+          if echo "$body" | grep -q '"maintenance":true'; then
+            echo "::warning::Game server is in maintenance mode"
+          fi

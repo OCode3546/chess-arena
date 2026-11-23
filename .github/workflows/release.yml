@@ -51,6 +51,12 @@ jobs:
             node scripts/fetch-engine.mjs darwin arm64
           fi
       - run: npm test
+
+      # Two app instances play online against a local game server (smoke scenarios 5–7).
+      # Needs a build that points at that server; the release build below replaces it.
+      - name: Online end-to-end (two apps + local server)
+        run: SMOKE_ONLY=online node scripts/smoke.mjs --build
+
       - run: npm run build
 
       - name: Package (Windows)

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WS_PATH, QUICK_MATCH_POOLS } from '@shared/protocol';
 import { Bot, hello, pairByCode, player, startServer } from './helpers';
@@ -197,5 +200,36 @@ describe('integration over WebSockets', () => {
     running = null;
     await server.shutdown();
     expect(await white.next('game.over')).toMatchObject({ result: '*', reason: 'server-shutdown' });
+  });
+
+  it('maintenance file switches maintenance on and off without a restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chess-arena-maint-'));
+    const file = join(dir, 'maintenance.txt');
+    try {
+      const { url, http, server } = await setup({ maintenanceFile: file });
+      const idle = track(await Bot.join(url, player(1)));
+
+      writeFileSync(file, '  Down for an upgrade,\nback at 18:00 \u0007 ');
+      await server.checkMaintenanceFile();
+      expect(await idle.next('error')).toMatchObject({
+        code: 'BUSY',
+        message: 'Down for an upgrade, back at 18:00',
+      });
+      expect(await idle.closed()).toBe(4001);
+      expect(await (await fetch(`${http}/health`)).json()).toMatchObject({
+        status: 'ok',
+        maintenance: true,
+      });
+      const late = track(await Bot.open(url));
+      late.send(hello(player(2)));
+      expect(await late.next('error')).toMatchObject({ code: 'BUSY' });
+
+      rmSync(file);
+      await server.checkMaintenanceFile();
+      track(await Bot.join(url, player(3)));
+      expect(await (await fetch(`${http}/health`)).json()).toMatchObject({ maintenance: false });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

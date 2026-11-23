@@ -28,7 +28,8 @@ All settings are environment variables; the defaults suit a single small server.
 | `PORT` | `8080` | Port to listen on |
 | `HOST` | `0.0.0.0` | Interface to listen on |
 | `MIN_APP_VERSION` | `0.9.0` | Older apps are asked to update before playing online |
-| `MAINTENANCE_MESSAGE` | – | When set, new connections are refused with this message |
+| `MAINTENANCE_MESSAGE` | – | Start in maintenance mode with this message (see [Maintenance](#maintenance)) |
+| `MAINTENANCE_FILE` | – | Path of a file that switches maintenance on while it exists; its text is the message. Checked every 5 s, no restart needed |
 | `TRUST_PROXY` | off | Set to `1` behind a reverse proxy (Render, Caddy, Cloudflare Tunnel) so per-IP limits use the real client address |
 | `ID_SECRET` | random | Secret for deriving the player ids opponents see. Set it so they stay stable across restarts |
 | `SHUTDOWN_GRACE_MS` | `25000` | On shutdown, how long to wait for live games to finish |
@@ -39,7 +40,7 @@ All settings are environment variables; the defaults suit a single small server.
 
 | Path | |
 |---|---|
-| `GET /health` | `{"status":"ok", "liveGames":…, "connections":…, …}` — use it for uptime checks. Returns 503 while shutting down |
+| `GET /health` | `{"status":"ok", "maintenance":false, "liveGames":…, "connections":…, …}` — use it for uptime checks. Returns 503 while shutting down |
 | `/ws` | The WebSocket the app connects to |
 
 ## How games work
@@ -104,10 +105,64 @@ chess.example.com {
 
 Possible with dynamic DNS and Caddy on your own machine, but it exposes your home IP address and needs router changes. Prefer option 2.
 
-## Running it
+## Runbook
 
-- **Deploy / update:** rebuild and restart the container (or let Render redeploy). On `SIGTERM` the server stops accepting new games, waits up to `SHUTDOWN_GRACE_MS` for live ones, then ends the rest.
-- **Rollback:** redeploy the previous image or commit.
-- **Maintenance:** set `MAINTENANCE_MESSAGE` and restart; the app shows the message.
-- **Protocol changes:** bump `PROTOCOL_VERSION` in `src/shared/protocol.ts` and `MIN_APP_VERSION`, and release the app first.
-- **Monitoring:** point an uptime checker (e.g. UptimeRobot, Better Stack) at `/health`. Logs are JSON lines on stdout/stderr.
+### Production today
+
+The public server is `wss://play.chessarena.dpdns.org/ws`, baked into release builds (`electron.vite.config.ts`). It runs on the maintainer's Mac as two Docker containers on the network `chess-arena-net`:
+
+| Container | What it is |
+|---|---|
+| `chess-arena-server` | This server, image `chess-arena-server:latest`, port 8080 published on 127.0.0.1 only |
+| `chess-arena-tunnel` | `cloudflared` running the named tunnel `chess-arena`, forwarding `play.chessarena.dpdns.org` to `chess-arena-server:8080` |
+
+Settings and secrets live outside the repository in `~/.chess-arena/` (all `chmod 600`/`700`): `server.env` (`TRUST_PROXY=1`, `ID_SECRET`, `MIN_APP_VERSION`, `LOG_LEVEL`), `cloudflared/` (tunnel credentials and config) and `maintenance/`. Never commit these. The Mac must stay on and awake (System Settings → Energy: prevent automatic sleeping).
+
+[`deploy.sh`](deploy.sh) does every routine job below.
+
+### Deploy
+
+```sh
+git pull && npm ci --prefix server && npm test --prefix server   # tests first
+server/deploy.sh deploy
+```
+
+It builds the image from the checkout, keeps the running one as `chess-arena-server:previous`, stops the old container (`SIGTERM`), starts the new one and waits for `/health`. The container runs read-only, without Linux capabilities, with memory/process limits and rotated logs.
+
+### What happens to live games on a restart
+
+All state is in memory. On `SIGTERM` the server stops accepting new rooms and matches (players get "The server is restarting"), waits up to `SHUTDOWN_GRACE_MS` (25 s) for live games to finish, then ends the rest with **no result** — both apps show "Server restarted — game ended" and record no XP. Invite codes and queues are lost; apps reconnect on their own. To avoid ending games, turn on maintenance first, wait until `/health` shows `"liveGames":0`, then deploy.
+
+### Rollback
+
+```sh
+server/deploy.sh rollback
+```
+
+Swaps back to `chess-arena-server:previous` (the replaced image is kept as `:failed` for debugging). On Render: *Manual Deploy → Rollback* to the previous deploy.
+
+### Maintenance
+
+```sh
+server/deploy.sh maintenance "Upgrading the server — back at 18:00"
+server/deploy.sh maintenance off
+```
+
+Within 5 seconds: invite codes and queues close, idle players are disconnected and the app shows the message (it retries every 30 s); new players get the same message. Players in a live game can keep playing and rejoin until their game ends. On hosts without a writable file (Render), set `MAINTENANCE_MESSAGE` and redeploy instead.
+
+### Protocol changes
+
+Bump `PROTOCOL_VERSION` in `src/shared/protocol.ts`, release the new app first, then raise `MIN_APP_VERSION` in `~/.chess-arena/server.env` (and `render.yaml`) and redeploy. Older apps then show "Please update Chess Arena to play online" with a download button.
+
+### Monitoring
+
+- **Uptime:** the [Uptime workflow](../.github/workflows/uptime.yml) checks `/health` every 15 minutes; a failure turns red in GitHub Actions and emails the repository owner. Its run history is the uptime record. Docker's own health check runs every 30 s (`docker ps` shows `healthy`).
+- **Status and errors:** `server/deploy.sh status` shows `/health`, the containers and the last day's warnings and errors.
+- **Logs:** JSON lines; `info` on stdout, `warn`/`error` on stderr. A line with `"msg":"stats"` every 10 minutes records the counts. Crashes are logged as `"msg":"crash"` before the process exits and Docker restarts it. Logs contain game ids, room codes and counts — never names, guest ids or IP addresses (abusive connections are logged with a one-way `ipTag`). Rotated at 5 × 10 MB.
+
+### Security checklist
+
+- Only `wss://` through the tunnel; port 8080 is bound to 127.0.0.1, the home IP is never exposed and no router ports are open.
+- `TRUST_PROXY=1` only behind a proxy that appends the client address to `X-Forwarded-For` (Cloudflare, Render, Caddy); otherwise per-IP limits can be bypassed.
+- `ID_SECRET` is random and private; changing it only changes the public player ids.
+- Dependencies: `npm audit --omit=dev --prefix server` must be clean before a deploy; keep `cloudflare/cloudflared` and `node:22-alpine` updated.

@@ -410,6 +410,7 @@ export function Board({
         role="application"
         // Moves played so far (tests use this; the move list is hidden in narrow windows).
         data-ply={history.length}
+        data-orientation={orientation}
         data-board={look.board}
         data-piece-set={look.pieceSet}
         aria-label={

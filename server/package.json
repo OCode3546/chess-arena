@@ -1,6 +1,6 @@
 {
   "name": "chess-arena-server",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Online game server for Chess Arena: invite-code rooms, quick match and server-authoritative games.",
   "license": "GPL-3.0-only",
   "private": true,

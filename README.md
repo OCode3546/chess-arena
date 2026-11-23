@@ -153,7 +153,7 @@ npm run dev            # starts the app with hot reload
 | `npm run dev` | Start the app in development mode |
 | `npm test` | Unit tests (Vitest) |
 | `npm run lint` · `npm run typecheck` | ESLint and TypeScript checks |
-| `npm run verify:sandbox` | End-to-end smoke suite: launches the built app and plays through every screen. Set `SMOKE_APP=<packaged executable>` to test a packaged build |
+| `npm run verify:sandbox` | End-to-end smoke suite: builds the app against a local game server, plays through every screen, and has two app instances play online (invite code, quick match, quit and rejoin). Needs `npm ci --prefix server` once. Set `SMOKE_APP=<packaged executable>` to test a packaged build (online checks are skipped there) |
 | `npm run dist:mac` | Build the Mac `.dmg` and `.zip` (Apple Silicon and Intel) into `release/<version>/` |
 | `npm run dist:win` | Build the Windows installer and portable exe (run on Windows) |
 | `npm run screenshots` | Regenerate the README screenshots (macOS) |
@@ -167,7 +167,9 @@ npm run dev            # starts the app with hot reload
 ```text
 electron/      main process: window, storage, Stockfish process, auto-updater
 src/           React renderer: screens, board, AI, progression, stores
-src/shared/    types, IPC channels and validators shared by both processes
+src/shared/    types, IPC channels, validators and the online protocol (shared with the server)
+src/net/       online play: WebSocket connection, reconnects, online game state
+server/        the online game server (see server/README.md)
 scripts/       Stockfish download, end-to-end smoke suite, screenshots
 tests/         unit tests
 docs/          README screenshots
@@ -177,8 +179,8 @@ docs/          README screenshots
 <summary><b>Releasing a new version</b> (maintainers)</summary>
 
 1. Bump `version` in `package.json` and add the notes to `CHANGELOG.md` and `src/config/changelog.ts`.
-2. Commit, then tag and push: `git tag v0.9.0 && git push origin main v0.9.0`.
-3. The **Release** workflow builds both platforms, runs the smoke suite against the packaged apps and creates a **draft** GitHub Release with all files.
+2. Commit, then tag and push: `git tag v1.0.0 && git push origin main v1.0.0`.
+3. The **Release** workflow builds both platforms, runs the online end-to-end tests and the smoke suite against the packaged apps, and creates a **draft** GitHub Release with all files.
 4. Check the draft and click **Publish release**. Installed apps only see the update after that.
 
 **Code signing (optional).** Add these repository secrets and the release workflow uses them automatically:

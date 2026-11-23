@@ -281,6 +281,36 @@ describe('Hub: playing', () => {
     expect(hub.game(gameId)).toBeUndefined();
   });
 
+  it('maintenance at runtime: idle players leave with the message, games play on', () => {
+    const { hub, join, gameId, w, b } = startedGame();
+    const host = join(player(5));
+    hub.handle(host, { t: 'room.create', tc: TC, color: 'w' });
+    const idle = join(player(6));
+
+    hub.setMaintenance('Upgrading — back in 10 minutes');
+    expect(host.last('room.closed')).toMatchObject({ reason: 'cancelled' });
+    for (const c of [host, idle]) {
+      expect(c.last('error')).toMatchObject({ code: 'BUSY', message: 'Upgrading — back in 10 minutes' });
+      expect(c.closed?.code).toBe(4001);
+    }
+    expect(w.closed).toBeNull();
+
+    // Newcomers are refused; the players in the live game can still reconnect and finish.
+    const late = join(player(7));
+    expect(late.last('error')).toMatchObject({ code: 'BUSY' });
+    hub.disconnect(b);
+    const back = join(player(2));
+    expect(back.last('welcome')).toBeDefined();
+    hub.handle(back, { t: 'game.rejoin', gameId, token: b.last('game.start')!.token });
+    expect(back.last('game.state')).toBeDefined();
+    hub.handle(w, { t: 'game.resign', gameId });
+    hub.handle(w, { t: 'game.rematch', gameId });
+    expect(w.last('error')).toMatchObject({ code: 'BUSY' });
+
+    hub.setMaintenance(null);
+    expect(join(player(8)).last('welcome')).toBeDefined();
+  });
+
   it('draining: no new games, live ones end on shutdown', () => {
     const { hub, join, gameId, w } = startedGame();
     const waiting = join(player(5));

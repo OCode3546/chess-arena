@@ -86,12 +86,42 @@ export class Hub {
   private readonly games = new Map<string, Game>();
   private readonly cleanupTimers = new Map<string, unknown>();
   private draining = false;
+  private maintenance: string | null;
 
   constructor(
     private readonly config: ServerConfig,
     private readonly timers: Timers,
     private readonly log: Logger,
-  ) {}
+  ) {
+    this.maintenance = config.maintenanceMessage;
+  }
+
+  /** The maintenance message, or null when the server is open. */
+  get maintenanceMessage(): string | null {
+    return this.maintenance;
+  }
+
+  /**
+   * Turn maintenance mode on (with the message players see) or off, without a restart.
+   * Rooms and queues close and idle players are disconnected with the message; players in a
+   * live game keep playing (and can still rejoin) until their game ends.
+   */
+  setMaintenance(message: string | null): void {
+    const next = message?.trim() || null;
+    if (next === this.maintenance) return;
+    const wasOn = this.maintenance !== null;
+    this.maintenance = next;
+    this.log.info(next ? 'maintenance.on' : 'maintenance.off');
+    if (!next || wasOn) return;
+    this.closeLobby();
+    for (const s of [...this.sessions.values()]) {
+      if (!s.conn || s.gameId) continue;
+      const conn = s.conn;
+      this.error(conn, 'BUSY', next);
+      conn.close(CLOSE.busy, 'maintenance');
+      this.disconnect(conn);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Connections
@@ -170,16 +200,15 @@ export class Hub {
       conn.close(CLOSE.upgradeRequired, 'upgrade required');
       return false;
     }
-    if (this.config.maintenanceMessage || this.draining) {
-      const text =
-        this.config.maintenanceMessage ?? 'The server is restarting. Try again in a minute.';
-      this.error(conn, 'BUSY', text);
+    const { guestId } = msg.player;
+    let session = this.sessions.get(guestId);
+    // During maintenance or a shutdown only players with a live game get in (to finish it).
+    if ((this.maintenance || this.draining) && !session?.gameId) {
+      this.error(conn, 'BUSY', this.closedMessage());
       conn.close(CLOSE.busy, 'busy');
       return false;
     }
 
-    const { guestId } = msg.player;
-    let session = this.sessions.get(guestId);
     if (!session) {
       session = {
         guestId,
@@ -510,6 +539,11 @@ export class Hub {
   /** Stop accepting new rooms and matches; existing games play on. */
   startDraining(): void {
     this.draining = true;
+    this.closeLobby();
+  }
+
+  /** Close every invite room and empty the quick-match queues. */
+  private closeLobby(): void {
     for (const room of [...this.rooms.values()]) this.closeRoom(room, 'cancelled');
     for (const s of this.sessions.values()) {
       if (s.pool) {
@@ -547,11 +581,16 @@ export class Hub {
 
   /** Not in a live game and the server isn't shutting down. Reports why not. */
   private canStartSomething(s: Session): boolean {
-    if (this.draining) {
-      return this.error(s.conn, 'BUSY', 'The server is restarting. Try again in a minute.');
-    }
+    if (this.draining || this.maintenance) return this.error(s.conn, 'BUSY', this.closedMessage());
     if (s.gameId) return this.error(s.conn, 'BUSY', 'Finish your current game first.');
     return true;
+  }
+
+  private closedMessage(): string {
+    return (
+      (this.draining ? null : this.maintenance) ??
+      'The server is restarting. Try again in a minute.'
+    );
   }
 
   /** Forget offline players that have nothing going on. */

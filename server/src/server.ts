@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -8,7 +10,7 @@ import {
   WS_PATH,
   type ServerMsg,
 } from '@shared/protocol';
-import type { ServerConfig } from './config';
+import { cleanMaintenanceMessage, type ServerConfig } from './config';
 import { CLOSE, Hub, type Conn } from './hub';
 import { createLogger, type Logger } from './log';
 import { TokenBucket } from './rateLimit';
@@ -21,6 +23,18 @@ export interface GameServer {
   listen(): Promise<number>;
   /** Drain: no new games, wait for live ones (up to the configured grace), then stop. */
   shutdown(): Promise<void>;
+  /** Re-read the maintenance file now (it is also checked every few seconds). */
+  checkMaintenanceFile(): Promise<void>;
+}
+
+/** How often the maintenance file is checked. */
+const MAINTENANCE_POLL_MS = 5_000;
+/** How often a line of counts is logged (for uptime and load history). */
+const STATS_LOG_MS = 10 * 60_000;
+
+/** A short, stable tag for an IP address, so logs can group abuse without storing the address. */
+function ipTag(ip: string): string {
+  return createHash('sha256').update(`chess-arena:${ip}`).digest('base64url').slice(0, 10);
 }
 
 class SocketConn implements Conn {
@@ -84,6 +98,7 @@ export function createGameServer(
     if (path === '/health') {
       const body = JSON.stringify({
         status: draining ? 'draining' : 'ok',
+        maintenance: hub.maintenanceMessage !== null,
         protocol: PROTOCOL_VERSION,
         uptimeSec: Math.round((Date.now() - startedAt) / 1000),
         ...hub.stats(),
@@ -120,7 +135,7 @@ export function createGameServer(
 
   function strike(conn: SocketConn): void {
     if (++conn.strikes > config.maxStrikes) {
-      log.warn('conn.closed.strikes', { ip: conn.ip });
+      log.warn('conn.closed.strikes', { ipTag: ipTag(conn.ip) });
       conn.close(CLOSE.policy, 'too many bad messages');
     }
   }
@@ -138,7 +153,13 @@ export function createGameServer(
       }
       const msg = isBinary ? null : parseClientMsg(data.toString());
       if (!msg) strike(conn);
-      hub.handle(conn, msg);
+      try {
+        hub.handle(conn, msg);
+      } catch (err) {
+        // A bug in one handler must not take the whole server (and every game) down.
+        log.error('handler.failed', { type: msg?.t, error: String(err) });
+        conn.send({ t: 'error', code: 'BAD_MSG', message: 'Something went wrong. Try again.' });
+      }
     });
     ws.on('pong', () => {
       const now = timers.now();
@@ -172,6 +193,28 @@ export function createGameServer(
   }, config.heartbeatMs);
   heartbeat.unref();
 
+  const statsLog = setInterval(() => {
+    log.info('stats', { uptimeSec: Math.round((Date.now() - startedAt) / 1000), ...hub.stats() });
+  }, STATS_LOG_MS);
+  statsLog.unref();
+
+  let lastFileText: string | null = null;
+  async function checkMaintenanceFile(): Promise<void> {
+    if (!config.maintenanceFile) return;
+    let text: string | null;
+    try {
+      text = cleanMaintenanceMessage(await readFile(config.maintenanceFile, 'utf8'));
+    } catch {
+      text = null; // No file: not in maintenance (unless MAINTENANCE_MESSAGE says so).
+    }
+    if (text === lastFileText) return;
+    lastFileText = text;
+    hub.setMaintenance(text ?? config.maintenanceMessage);
+  }
+  const maintenancePoll = setInterval(() => void checkMaintenanceFile(), MAINTENANCE_POLL_MS);
+  maintenancePoll.unref();
+  void checkMaintenanceFile();
+
   return {
     hub,
     http,
@@ -183,6 +226,7 @@ export function createGameServer(
           resolve((http.address() as AddressInfo).port);
         });
       }),
+    checkMaintenanceFile,
     async shutdown() {
       draining = true;
       hub.startDraining();
@@ -192,6 +236,8 @@ export function createGameServer(
       }
       hub.endAllGames();
       clearInterval(heartbeat);
+      clearInterval(statsLog);
+      clearInterval(maintenancePoll);
       for (const conn of conns) conn.close(1001, 'server shutting down');
       await new Promise<void>((resolve) => {
         wss.close();

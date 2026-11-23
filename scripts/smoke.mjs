@@ -5,10 +5,14 @@
 // 50 levels and equipped cosmetics apply instantly and survive a relaunch, and the
 // history / review / PGN export, settings, sound, backup export → reset → import,
 // How to Play and About flows, resigning against the AI and resuming an unfinished game
-// after a relaunch.
-// Run via `npm run verify:sandbox` (`SMOKE_KEEP_PGN=<file>` keeps the exported PGN), or
-// against a packaged build with `SMOKE_APP=<path to the app executable> node scripts/smoke.mjs`.
-import { spawnSync } from 'node:child_process';
+// after a relaunch. Online play (when the build points at a local game server): two app
+// instances play a private game by invite code, pair through quick match, and one is killed
+// and relaunched mid-game and rejoins.
+// Run via `npm run verify:sandbox` (builds with a local game server URL; `SMOKE_KEEP_PGN=<file>`
+// keeps the exported PGN), or against a packaged build with
+// `SMOKE_APP=<path to the app executable> node scripts/smoke.mjs` (online checks are skipped
+// when the build points at the production server). `SMOKE_ONLY=online` runs just those.
+import { spawn, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -20,7 +24,22 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import electron from 'electron';
+
+/** Game server the `--build` build talks to (the smoke run starts it). */
+const LOCAL_SERVER_URL = 'ws://127.0.0.1:18765/ws';
+
+if (process.argv.includes('--build')) {
+  const env = { ...process.env };
+  env.CHESS_ARENA_SERVER_URL ||= LOCAL_SERVER_URL;
+  const r = spawnSync('npx', ['electron-vite', 'build'], {
+    env,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
+  if (r.status !== 0) process.exit(r.status ?? 1);
+}
 
 const dirs = [];
 const tempDir = (prefix) => {
@@ -553,6 +572,366 @@ function engineProcesses() {
   return r.stdout.trim() ? r.stdout.trim().split('\n').length : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Online play: two app instances driven at the same time against a local game server.
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** The port of a game server on this machine, or null for a remote (production) server. */
+function localServerPort(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) {
+      return null;
+    }
+    return Number(u.port || 80);
+  } catch {
+    return null;
+  }
+}
+
+/** Build and start the real game server; resolves once /health answers. */
+async function startGameServer(port) {
+  const built = spawnSync(process.execPath, [join('server', 'build.mjs')], { stdio: 'inherit' });
+  if (built.status !== 0) {
+    throw new Error('Could not build the game server (run `npm ci --prefix server` first)');
+  }
+  const proc = spawn(process.execPath, [join('server', 'dist', 'index.js')], {
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', LOG_LEVEL: 'warn' },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  for (let i = 0; i < 50; i++) {
+    try {
+      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return proc;
+    } catch {
+      // Not up yet.
+    }
+    await sleep(200);
+  }
+  proc.kill();
+  throw new Error('The game server did not start');
+}
+
+const ONLINE_HELPERS = `
+  ${HELPERS}
+  const createProfile = async (name) => {
+    await waitFor(() => !!document.querySelector('[role=dialog] input'), 8000);
+    const input = document.querySelector('[role=dialog] input');
+    if (!input) return false;
+    await sleep(200);
+    setInput(input, name);
+    await sleep(100);
+    byText('Create profile').click();
+    await sleep(500);
+    return true;
+  };
+  const setInput = (el, v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const within = (sel, text) => [...document.querySelectorAll(sel + ' button')]
+    .find((b) => b.textContent.trim().startsWith(text));
+  const board = () => document.querySelector('[data-screen=game] [role=application]');
+  const ply = () => Number(board()?.dataset.ply ?? -1);
+  const connection = () => document.querySelector('[data-connection]')?.dataset.connection;
+  const clickSq = (sq) => {
+    const b = board();
+    const r = b.getBoundingClientRect();
+    let col = sq.charCodeAt(0) - 97;
+    let row = 8 - Number(sq[1]);
+    if (b.dataset.orientation === 'b') { col = 7 - col; row = 7 - row; }
+    const o = { bubbles: true, clientX: r.left + (col + 0.5) * (r.width / 8),
+      clientY: r.top + (row + 0.5) * (r.height / 8), button: 0, pointerId: 1, isPrimary: true };
+    b.dispatchEvent(new PointerEvent('pointerdown', o));
+    b.dispatchEvent(new PointerEvent('pointerup', o));
+  };
+  const move = async (uci) => {
+    const before = ply();
+    for (let i = 0; i < 12; i++) {
+      clickSq(uci.slice(0, 2)); await sleep(120); clickSq(uci.slice(2, 4));
+      if (await waitFor(() => ply() > before, 500)) return true;
+    }
+    return false;
+  };
+  const goOnline = async () => {
+    location.hash = '#/online';
+    return waitFor(() => connection() === 'online' && !!within('[data-quick-match]', 'Find opponent'), 15000);
+  };
+  const resign = async () => {
+    byText('⚑ Resign').click();
+    await sleep(300);
+    const btn = [...document.querySelectorAll('[role=dialog] button')]
+      .find((b) => b.textContent.trim() === 'Resign');
+    btn?.click();
+    return !!btn;
+  };
+`;
+
+/** The result of the finished online game, as this app saved it. */
+const ONLINE_OVER = `
+  const over = await waitFor(() => !!document.querySelector('[data-online-controls] [data-rematch]'), 10000);
+  await sleep(600);
+  const h = (await window.chessArena.storage.getHistory())[0];
+  const p = (await window.chessArena.storage.getProfiles()).profiles[0];
+  return { over, record: h && { mode: h.mode, result: h.result, reason: h.reason, moves: h.moves },
+    games: (await window.chessArena.storage.getHistory()).length, xp: p?.xp };
+`;
+
+/** One app instance in interactive smoke mode: renderer JS goes in, results come back. */
+class AppInstance {
+  constructor(name, userData) {
+    this.name = name;
+    this.userData = userData;
+    this.pending = new Map();
+    this.nextId = 1;
+    this.stderr = '';
+  }
+
+  start() {
+    const env = {
+      ...process.env,
+      CHESS_ARENA_SMOKE: '1',
+      CHESS_ARENA_SMOKE_INTERACTIVE: '1',
+      CHESS_ARENA_SMOKE_SKIP_ROUTES: '1',
+      CHESS_ARENA_USER_DATA: this.userData,
+    };
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.ELECTRON_RENDERER_URL;
+    this.proc = SMOKE_APP ? spawn(SMOKE_APP, [], { env }) : spawn(electron, ['.'], { env });
+    this.proc.stderr.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)));
+    this.exited = new Promise((r) => this.proc.once('exit', (code, signal) => r({ code, signal })));
+    const lines = createInterface({ input: this.proc.stdout });
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${this.name}: app did not start`)), 60_000);
+      lines.on('line', (line) => {
+        if (line.startsWith('SMOKE-READY ')) {
+          clearTimeout(timer);
+          resolve(JSON.parse(line.slice(12)));
+        } else if (line.startsWith('SMOKE-RESULT ')) {
+          const m = JSON.parse(line.slice(13));
+          const p = this.pending.get(m.id);
+          if (!p) return;
+          this.pending.delete(m.id);
+          if (m.error) p.reject(new Error(`${this.name}: ${m.error}`));
+          else p.resolve(m.value);
+        } else if (line.startsWith('SMOKE ')) {
+          clearTimeout(timer);
+          reject(new Error(`${this.name}: ${line}`));
+        }
+      });
+      void this.exited.then(() => {
+        clearTimeout(timer);
+        const err = new Error(`${this.name}: the app exited`);
+        reject(err);
+        for (const p of this.pending.values()) p.reject(err);
+        this.pending.clear();
+      });
+    });
+  }
+
+  /** Run an async function body (with the online helpers in scope) in the renderer. */
+  run(body, timeoutMs = 60_000) {
+    const id = this.nextId++;
+    const js = `(async () => { ${ONLINE_HELPERS}\n${body}\n})()`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${this.name}: step timed out`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (v) => (clearTimeout(timer), resolve(v)),
+        reject: (e) => (clearTimeout(timer), reject(e)),
+      });
+      this.proc.stdin.write(`${JSON.stringify({ id, js })}\n`);
+    });
+  }
+
+  async quit() {
+    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return;
+    this.proc.stdin.write(`${JSON.stringify({ quit: true })}\n`);
+    const done = await Promise.race([this.exited, sleep(10_000).then(() => null)]);
+    if (!done) await this.kill();
+  }
+
+  /** Like a crash or a force-quit: no goodbye to the server. */
+  async kill() {
+    this.proc.kill('SIGKILL');
+    await this.exited;
+  }
+}
+
+/** Play `moves` (UCI) alternately, White first; true once both apps show every move. */
+async function playOnline(white, black, moves, startPly = 0) {
+  for (let i = 0; i < moves.length; i++) {
+    const n = startPly + i;
+    const mover = n % 2 === 0 ? white : black;
+    const ok = await mover.run(
+      `await waitFor(() => ply() === ${n}, 10000); return move(${JSON.stringify(moves[i])});`,
+    );
+    if (!ok) return { failedAt: moves[i] };
+  }
+  const end = startPly + moves.length;
+  const seen = await Promise.all(
+    [white, black].map((app) =>
+      app.run(`await waitFor(() => ply() === ${end}, 10000); return ply();`),
+    ),
+  );
+  return seen.every((n) => n === end) || { plies: seen };
+}
+
+/** Host (White) creates a private game and the guest joins with the code. */
+async function inviteGame(host, guest) {
+  const code = await host.run(`
+    if (!(await goOnline())) return 'not connected: ' + connection();
+    within('[data-private-game]', 'White').click();
+    await sleep(100);
+    within('[data-private-game]', 'Create game').click();
+    await waitFor(() => !!document.querySelector('[data-invite-code]'), 5000);
+    return document.querySelector('[data-invite-code]')?.dataset.inviteCode ?? null;`);
+  const guestSide = await guest.run(`
+    if (!(await goOnline())) return 'not connected: ' + connection();
+    setInput(document.querySelector('[data-join-game] input'), ${JSON.stringify(` ${String(code).toLowerCase()} `)});
+    await sleep(150);
+    within('[data-join-game]', 'Join game').click();
+    await waitFor(() => !!board(), 8000);
+    return board()?.dataset.orientation ?? null;`);
+  const hostSide = await host.run(
+    `await waitFor(() => !!board(), 8000); return board()?.dataset.orientation ?? null;`,
+  );
+  return { code, hostSide, guestSide };
+}
+
+async function onlineChecks(port) {
+  const server = await startGameServer(port);
+  const userA = tempDir('chess-arena-online-a-');
+  const userB = tempDir('chess-arena-online-b-');
+  const a = new AppInstance('A', userA);
+  let b = new AppInstance('B', userB);
+  try {
+    await Promise.all([a.start(), b.start()]);
+    const made = await Promise.all([
+      a.run(`return createProfile('Alice')`),
+      b.run(`return createProfile('Bob')`),
+    ]);
+    check('online: two apps start with their own profiles', made.every(Boolean), made);
+
+    // (5) A private game by invite code: White mates on move 10 (online XP needs 10 moves).
+    const invite = await inviteGame(a, b);
+    check(
+      'online: creating a private game shows an invite code',
+      /^[A-Z0-9]{6}$/.test(invite.code),
+      invite.code,
+    );
+    check(
+      'online: a friend joins with the code; colours as chosen',
+      invite.hostSide === 'w' && invite.guestSide === 'b',
+      invite,
+    );
+    const mateLine =
+      'a2a3 a7a6 h2h3 h7h6 a3a4 a6a5 h3h4 h6h5 a1a2 a8a7 h1h2 h8h7 e2e4 e7e5 f1c4 b8c6 d1f3 d7d6 f3f7';
+    const mate = await playOnline(a, b, mateLine.split(' '));
+    check('online: moves are relayed between the two apps', mate === true, mate);
+    const [overA, overB] = await Promise.all([a.run(ONLINE_OVER), b.run(ONLINE_OVER)]);
+    const mated = { mode: 'online', result: '1-0', reason: 'checkmate', moves: 10 };
+    check(
+      'online: checkmate ends the game the same way on both apps',
+      overA?.over &&
+        overB?.over &&
+        JSON.stringify(overA.record) === JSON.stringify(mated) &&
+        JSON.stringify(overB.record) === JSON.stringify(mated),
+      { a: overA?.record, b: overB?.record },
+    );
+    check(
+      'online: the winner earns XP',
+      overA?.xp > 0 && overA.xp > (overB?.xp ?? 0), {
+      a: overA?.xp,
+      b: overB?.xp,
+    });
+
+    // (6) Quick match pairs the two apps.
+    const searching = await a.run(`
+      if (!(await goOnline())) return 'not connected: ' + connection();
+      within('[data-quick-match]', 'Find opponent').click();
+      return waitFor(() => !!document.querySelector('[data-searching]'), 5000);`);
+    check('quick match: the first player waits for an opponent', searching === true, searching);
+    const sideB = await b.run(`
+      if (!(await goOnline())) return 'not connected: ' + connection();
+      within('[data-quick-match]', 'Find opponent').click();
+      await waitFor(() => !!board(), 8000);
+      return board()?.dataset.orientation ?? null;`);
+    const sideA = await a.run(
+      `await waitFor(() => !!board(), 8000); return board()?.dataset.orientation ?? null;`,
+    );
+    check(
+      'quick match: pairs the two apps with opposite colours',
+      ['w', 'b'].includes(sideA) && ['w', 'b'].includes(sideB) && sideA !== sideB,
+      { a: sideA, b: sideB },
+    );
+    const [qWhite, qBlack] = sideA === 'w' ? [a, b] : [b, a];
+    const opening = await playOnline(qWhite, qBlack, ['e2e4', 'e7e5']);
+    const resigned = opening === true && (await qBlack.run(`return resign()`));
+    const [qw, qb] = await Promise.all([qWhite.run(ONLINE_OVER), qBlack.run(ONLINE_OVER)]);
+    const byResignation = { mode: 'online', result: '1-0', reason: 'resignation', moves: 1 };
+    check(
+      'quick match: resigning ends the game for both',
+      resigned === true &&
+        JSON.stringify(qw?.record) === JSON.stringify(byResignation) &&
+        JSON.stringify(qb?.record) === JSON.stringify(byResignation),
+      { white: qw?.record, black: qb?.record },
+    );
+
+    // (7) The guest's app is killed mid-game, relaunched and rejoins.
+    const again = await inviteGame(a, b);
+    const start = again.hostSide === 'w' && (await playOnline(a, b, ['e2e4', 'e7e5']));
+    check('rejoin: a new game is under way', start === true, { again, start });
+    await b.kill();
+    const away = await a.run(
+      `return waitFor(() => !!document.querySelector('[data-opponent-away]'), 10000);`,
+    );
+    check('rejoin: the opponent sees the disconnect countdown', away === true);
+    b = new AppInstance('B (relaunched)', userB);
+    await b.start();
+    const back = await b.run(`
+      const offered = await waitFor(() => !!document.querySelector('[data-rejoin-online]'), 15000);
+      document.querySelector('[data-rejoin-online]')?.click();
+      const restored = await waitFor(() => ply() === 2, 15000);
+      return { offered, restored, side: board()?.dataset.orientation ?? null };`);
+    check(
+      'rejoin: Home offers Rejoin and the game comes back',
+      back?.offered === true && back?.restored === true && back?.side === 'b',
+      back,
+    );
+    const seenBack = await a.run(
+      `return waitFor(() => !document.querySelector('[data-opponent-away]'), 10000);`,
+    );
+    check('rejoin: the opponent sees the player return', seenBack === true);
+    const after = await playOnline(a, b, ['g1f3', 'b8c6'], 2);
+    check('rejoin: play continues after rejoining', after === true, after);
+    const resignedAfter = await b.run(`return resign()`);
+    const [ra, rb] = await Promise.all([a.run(ONLINE_OVER), b.run(ONLINE_OVER)]);
+    check(
+      'rejoin: the finished game is saved on both apps',
+      resignedAfter === true &&
+        ra?.record?.result === '1-0' &&
+        rb?.record?.result === '1-0' &&
+        ra?.record?.moves === 2 &&
+        rb?.record?.moves === 2 &&
+        rb?.games === 3,
+      { a: ra?.record, b: rb?.record, bGames: rb?.games },
+    );
+  } catch (err) {
+    check('online: scenario ran to the end', false, String(err));
+    for (const app of [a, b])
+      if (app.stderr) console.error(`--- ${app.name} stderr ---\n${app.stderr}`);
+  } finally {
+    await Promise.all([a.quit(), b.quit()]);
+    server.kill();
+  }
+}
+
+/** Ends the run after the online checks (`SMOKE_ONLY=online`). */
+class OnlineOnly extends Error {}
+
 const failures = [];
 const check = (name, ok, detail) => {
   console.log(`${ok ? '✔' : '✘'} ${name}${detail ? `  ${JSON.stringify(detail)}` : ''}`);
@@ -581,6 +960,16 @@ try {
   );
   for (const [route, ok] of Object.entries(first.routes))
     check(`route ${route} renders`, ok === true);
+
+  const onlinePort = localServerPort(first.serverUrl);
+  if (onlinePort) {
+    await onlineChecks(onlinePort);
+  } else if (process.env.SMOKE_ONLY === 'online') {
+    check('online checks need a build that points at a local server', false, first.serverUrl);
+  } else {
+    console.log(`- online checks skipped (the build uses ${first.serverUrl})`);
+  }
+  if (process.env.SMOKE_ONLY === 'online') throw new OnlineOnly();
 
   const second = run('');
   check('theme persisted across relaunch (settings)', second.settingsTheme === 'light');
@@ -832,6 +1221,8 @@ try {
       JSON.stringify(resumed?.clocks) === JSON.stringify(resumed?.expected),
     resumed && { shown: resumed.clocks, saved: resumed.expected },
   );
+} catch (err) {
+  if (!(err instanceof OnlineOnly)) throw err;
 } finally {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }

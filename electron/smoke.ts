@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { app, type BrowserWindow } from 'electron';
 
 interface Step {
@@ -13,6 +14,29 @@ interface Step {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Run renderer JS sent as JSON lines on stdin until `{"quit":true}` or stdin closes. */
+async function serveCommands(wc: Electron.WebContents): Promise<void> {
+  const lines = createInterface({ input: process.stdin });
+  for await (const line of lines) {
+    let cmd: { id?: unknown; js?: unknown; quit?: unknown };
+    try {
+      cmd = JSON.parse(line) as typeof cmd;
+    } catch {
+      continue;
+    }
+    if (cmd.quit) break;
+    if (typeof cmd.js !== 'string') continue;
+    let out: { id: unknown; value?: unknown; error?: string };
+    try {
+      out = { id: cmd.id, value: await wc.executeJavaScript(cmd.js) };
+    } catch (err) {
+      out = { id: cmd.id, error: String(err) };
+    }
+    process.stdout.write(`SMOKE-RESULT ${JSON.stringify(out)}\n`);
+  }
+  lines.close();
+}
 
 /**
  * `CHESS_ARENA_SMOKE=1` (dev/CI only): load the app hidden, probe the renderer's
@@ -42,6 +66,7 @@ export function runSmokeTest(win: BrowserWindow): void {
           global: typeof global,
           bufferGlobal: typeof Buffer,
           apiKeys: Object.keys(api).sort(),
+          serverUrl: api.online.serverUrl,
           appRendered: !!document.querySelector('[data-app-root]'),
           dataTheme: document.documentElement.dataset.theme,
           settingsTheme: settings.theme,
@@ -73,6 +98,16 @@ export function runSmokeTest(win: BrowserWindow): void {
       report['routes'] = routes;
       await wc.executeJavaScript(`location.hash = '#/'`);
       await sleep(300);
+
+      // Interactive: the test driver sends `{"id","js"}` lines on stdin and reads one
+      // `SMOKE-RESULT {"id","value"|"error"}` line per command (used to run two apps at once).
+      if (env['CHESS_ARENA_SMOKE_INTERACTIVE'] === '1') {
+        clearTimeout(timer);
+        process.stdout.write(`SMOKE-READY ${JSON.stringify(report)}\n`);
+        await serveCommands(wc);
+        app.exit(0);
+        return;
+      }
 
       const stepsFile = env['CHESS_ARENA_SMOKE_STEPS'];
       if (stepsFile) {

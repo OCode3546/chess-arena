@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0
+
+- First stable release: play the computer, a friend on the same computer, or anyone online.
+- Online play is tested end to end on every release: two apps play by invite code and quick match, and a player who quits mid-game rejoins.
+- Clear message in the app when the game server is in maintenance; games in progress can still be finished.
+- Security updates for bundled libraries.
+
 ## 0.9.0
 
 - Play online: quick match (3+2, 5+3, 10+0, 15+10) or a private game with a 6-character invite code. No account needed.

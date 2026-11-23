@@ -7,8 +7,13 @@ export interface ServerConfig {
   host: string;
   /** Apps older than this get UPGRADE_REQUIRED. */
   minAppVersion: string;
-  /** When set, new connections are turned away with this message. */
+  /** When set, the server starts in maintenance mode with this message. */
   maintenanceMessage: string | null;
+  /**
+   * A file watched for maintenance mode: while it exists and isn't empty, its text is the
+   * maintenance message. Lets the operator switch maintenance on and off without a restart.
+   */
+  maintenanceFile: string | null;
   logLevel: LogLevel;
   /** Behind a reverse proxy (Render, Caddy, Cloudflare): take the client IP from X-Forwarded-For. */
   trustProxy: boolean;
@@ -44,6 +49,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   host: '0.0.0.0',
   minAppVersion: '0.9.0',
   maintenanceMessage: null,
+  maintenanceFile: null,
   logLevel: 'info',
   trustProxy: false,
   idSecret: '',
@@ -79,7 +85,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: num('PORT', DEFAULT_CONFIG.port),
     host: env['HOST'] || DEFAULT_CONFIG.host,
     minAppVersion: env['MIN_APP_VERSION'] || DEFAULT_CONFIG.minAppVersion,
-    maintenanceMessage: env['MAINTENANCE_MESSAGE'] || null,
+    maintenanceMessage: cleanMaintenanceMessage(env['MAINTENANCE_MESSAGE'] ?? ''),
+    maintenanceFile: env['MAINTENANCE_FILE'] || null,
     logLevel: level && LEVELS.includes(level) ? level : DEFAULT_CONFIG.logLevel,
     trustProxy: env['TRUST_PROXY'] === '1' || env['TRUST_PROXY'] === 'true',
     // Without a fixed secret, public ids change on every restart (harmless, just less stable).
@@ -87,4 +94,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     shutdownGraceMs: num('SHUTDOWN_GRACE_MS', DEFAULT_CONFIG.shutdownGraceMs),
     maxConnectionsPerIp: num('MAX_CONNECTIONS_PER_IP', DEFAULT_CONFIG.maxConnectionsPerIp),
   };
+}
+
+/** Longest maintenance message sent to players (the app accepts up to 500 characters). */
+export const MAX_MAINTENANCE_CHARS = 300;
+
+/** One line of plain text for players, or null if nothing is left. */
+export function cleanMaintenanceMessage(raw: string): string | null {
+  // eslint-disable-next-line no-control-regex
+  const text = raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, MAX_MAINTENANCE_CHARS) : null;
 }

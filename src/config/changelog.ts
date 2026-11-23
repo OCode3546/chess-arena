@@ -1,6 +1,14 @@
 /** Release notes shown in About, newest first. */
 export const CHANGELOG: { version: string; notes: string[] }[] = [
   {
+    version: '1.0.0',
+    notes: [
+      'First stable release: play the computer, a friend on this computer, or anyone online',
+      'A clear message when the game server is in maintenance; games in progress can still finish',
+      'Security updates for bundled libraries',
+    ],
+  },
+  {
     version: '0.9.0',
     notes: [
       'Play online: quick match or a private game with an invite code — no account needed',
