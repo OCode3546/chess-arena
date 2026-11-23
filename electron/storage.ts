@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
@@ -7,15 +8,20 @@ import {
   DEFAULT_SETTINGS,
   type GameRecord,
   type LoadResult,
+  type OnlineIdentity,
+  type OnlineRejoin,
   type ProfilesDoc,
   type SavedGame,
   type Settings,
 } from '@shared/types';
 import {
+  cleanDisplayName,
   isGameRecord,
+  isOnlineRejoin,
   isSavedGame,
   MAX_HISTORY,
   resetProfileProgress,
+  sanitizeOnlineIdentity,
   sanitizeProfilesDoc,
   sanitizeSettings,
 } from '@shared/validate';
@@ -29,6 +35,7 @@ let settingsStore: Store<Doc>;
 let saveStore: Store<Doc>;
 let profileStore: Store<Doc>;
 let historyStore: Store<Doc>;
+let onlineStore: Store<Doc>;
 /** Set when the save file was unreadable; reported once to the renderer. */
 let saveCorrupt = false;
 
@@ -60,6 +67,7 @@ export function initStorage(): void {
   saveStore = openStore('savegame', migrations.savegame);
   profileStore = openStore('profiles', migrations.profiles);
   historyStore = openStore('history', migrations.history);
+  onlineStore = openStore('online', migrations.online);
   if (startupIssues.includes('savegame')) saveCorrupt = true;
 }
 
@@ -146,4 +154,34 @@ export function resetProgress(): ProfilesDoc {
   historyStore.set('games', []);
   clearSavedGame();
   return next;
+}
+
+/** This install's online identity; created on first use. */
+export function getOnlineIdentity(): OnlineIdentity {
+  const stored = sanitizeOnlineIdentity(onlineStore.get('identity'));
+  if (stored) return stored;
+  const fresh: OnlineIdentity = { guestId: randomUUID(), displayName: '' };
+  onlineStore.set('identity', fresh);
+  return fresh;
+}
+
+export function setOnlineDisplayName(name: unknown): OnlineIdentity {
+  const next = { ...getOnlineIdentity(), displayName: cleanDisplayName(name) };
+  onlineStore.set('identity', next);
+  return next;
+}
+
+export function getOnlineRejoin(): OnlineRejoin | null {
+  const r = onlineStore.get('rejoin');
+  return isOnlineRejoin(r) ? r : null;
+}
+
+export function setOnlineRejoin(rejoin: unknown): boolean {
+  if (!isOnlineRejoin(rejoin)) return false;
+  onlineStore.set('rejoin', rejoin);
+  return true;
+}
+
+export function clearOnlineRejoin(): void {
+  onlineStore.set('rejoin', null);
 }

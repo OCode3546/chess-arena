@@ -5,7 +5,7 @@
 # Chess Arena
 
 **A modern chess game for Windows and macOS.**<br>
-Challenge Stockfish at six difficulty levels, play a friend on the same computer, and level up all the way to 50.
+Challenge Stockfish at six difficulty levels, play a friend on the same computer or anyone online, and level up all the way to 50.
 
 [![Latest release](https://img.shields.io/github/v/release/OCode3546/chess-arena?sort=semver&label=release&color=6366f1)](https://github.com/OCode3546/chess-arena/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/OCode3546/chess-arena/total?color=6366f1)](https://github.com/OCode3546/chess-arena/releases)
@@ -32,6 +32,7 @@ Challenge Stockfish at six difficulty levels, play a friend on the same computer
 
 - **Play the computer** — Stockfish 19 at six levels, from *Beginner* (beatable while learning) to *Grandmaster* (full strength). Optional hints and takebacks on the easier levels.
 - **Play a friend** — pass-and-play on one computer with separate profiles, an auto-flipping board and fair XP rules.
+- **Play online** — quick match against the next player looking for the same clock, or invite a friend with a 6-letter code. No account needed; the server runs the clocks and checks every move, and a dropped connection has 60 seconds to come back.
 - **Real chess clocks** — Untimed, 3+2, 5+3, 10+0, 15+10 or a custom time control, with increments and pause.
 - **Levels and rewards** — earn XP for every game, climb from level 1 to 50 and unlock 6 board themes, 2 piece sets, avatars, frames, titles and move effects.
 - **Achievements and stats** — win streaks, wins per difficulty, fastest checkmate and more on your profile.
@@ -119,7 +120,7 @@ xattr -dr com.apple.quarantine "/Applications/Chess Arena.app"
 - **Windows installer:** new versions download in the background and install when you restart the app (Settings → App → *Update automatically*).
 - **Mac and the portable exe:** the app tells you when a new version is out and opens the download page.
 
-**Requirements:** Windows 10/11 (64-bit) or macOS 12+, 4 GB RAM, about 400 MB of disk space. No internet connection needed to play.
+**Requirements:** Windows 10/11 (64-bit) or macOS 12+, 4 GB RAM, about 400 MB of disk space. No internet connection needed except for online games.
 
 </details>
 
@@ -129,7 +130,7 @@ xattr -dr com.apple.quarantine "/Applications/Chess Arena.app"
 - [x] Profiles, XP, levels 1–50, rewards and achievements
 - [x] Game history, review and PGN export
 - [x] Windows and macOS installers with automatic updates
-- [ ] **Online play** — invite a friend with a 6-letter code, or get matched with a random opponent
+- [x] Online play — invite a friend with a 6-letter code, or get matched with a random opponent
 - [ ] Code-signed builds (no first-launch warnings)
 - [ ] Linux build
 

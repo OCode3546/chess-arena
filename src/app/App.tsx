@@ -5,10 +5,12 @@ import { aiEngine } from '@/ai/engine';
 import { wireSounds } from '@/audio/sfx';
 import { Button, Modal, ToastHost } from '@/components/ui';
 import { achievementById } from '@/config/achievements';
+import { useOnline, wireOnline } from '@/net/onlineStore';
 import { AboutScreen } from '@/screens/AboutScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { HistoryScreen } from '@/screens/HistoryScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
+import { OnlineScreen } from '@/screens/OnlineScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { ReviewScreen } from '@/screens/ReviewScreen';
 import { RewardsScreen } from '@/screens/RewardsScreen';
@@ -37,7 +39,7 @@ const BACKEND_NOTICE = {
 
 export function App() {
   const [ready, setReady] = useState(false);
-  const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmClose, setConfirmClose] = useState<null | 'local' | 'online'>(null);
   const { theme, accent, animations } = useSettings((s) => s.settings);
   const firstRun = useProfiles((s) => s.loaded && s.profiles.length === 0);
 
@@ -47,6 +49,11 @@ export function App() {
     const offProgression = wireProgression();
     const offSounds = wireSounds();
     const offUpdates = wireUpdates();
+    const offOnline = wireOnline();
+    // A new online game on the board (match found, friend joined, rematch, rejoin): show it.
+    const offOnlineNav = useOnline.subscribe((s, prev) => {
+      if (s.shownGame && s.shownGame !== prev.shownGame) location.hash = '#/game';
+    });
     const offNavigate = window.chessArena.app.onNavigate((path) => {
       location.hash = `#${path}`;
     });
@@ -85,6 +92,7 @@ export function App() {
           toast('Your game history file was damaged and has been reset.', 'warning');
         await loadProfiles();
         await useSession.getState().refreshSavedGame();
+        await useOnline.getState().init();
       } catch (err) {
         console.error(err);
         toast('Some saved data could not be loaded.', 'error');
@@ -97,6 +105,8 @@ export function App() {
       offProgression();
       offSounds();
       offUpdates();
+      offOnline();
+      offOnlineNav();
       offNavigate();
       offAchievements();
     };
@@ -115,10 +125,13 @@ export function App() {
   useEffect(() => {
     return window.chessArena.window.onCloseRequested(() => {
       const game = useGameStore.getState();
-      if (game.status === 'playing') {
+      const online = useOnline.getState().game;
+      if (online && !online.over) {
+        setConfirmClose('online');
+      } else if (game.status === 'playing' && game.settings?.mode !== 'online') {
         game.persist(Date.now());
         if (!game.paused) game.setPaused(true);
-        setConfirmClose(true);
+        setConfirmClose('local');
       } else {
         window.chessArena.window.confirmClose();
       }
@@ -150,6 +163,7 @@ export function App() {
                     <Route path="/" element={<HomeScreen />} />
                     <Route path="/setup" element={<SetupScreen />} />
                     <Route path="/game" element={<GameScreen />} />
+                    <Route path="/online" element={<OnlineScreen />} />
                     <Route path="/profile" element={<ProfileScreen />} />
                     <Route path="/rewards" element={<RewardsScreen />} />
                     <Route path="/history" element={<HistoryScreen />} />
@@ -167,12 +181,12 @@ export function App() {
         <ToastHost />
         <FirstRunModal open={ready && firstRun} />
         <Modal
-          open={confirmClose}
+          open={confirmClose === 'local'}
           title="Quit Chess Arena?"
-          onClose={() => setConfirmClose(false)}
+          onClose={() => setConfirmClose(null)}
           actions={
             <>
-              <Button variant="ghost" onClick={() => setConfirmClose(false)} data-autofocus>
+              <Button variant="ghost" onClick={() => setConfirmClose(null)} data-autofocus>
                 Keep playing
               </Button>
               <Button variant="primary" onClick={saveAndQuit}>
@@ -183,6 +197,24 @@ export function App() {
         >
           Your game is in progress. It has been saved — you can pick it up later with{' '}
           <b>Continue Game</b>.
+        </Modal>
+        <Modal
+          open={confirmClose === 'online'}
+          title="Leave game?"
+          onClose={() => setConfirmClose(null)}
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmClose(null)} data-autofocus>
+                Keep playing
+              </Button>
+              <Button variant="danger" onClick={() => window.chessArena.window.confirmClose()}>
+                Leave
+              </Button>
+            </>
+          }
+        >
+          Your online game keeps running. You’ll lose if you don’t come back within 60 s — open
+          Chess Arena again and choose <b>Rejoin online game</b>.
         </Modal>
       </div>
     </MotionConfig>

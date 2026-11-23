@@ -4,12 +4,12 @@ import type { Color, GameRecord } from '@shared/types';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Tabs } from '@/components/ui';
 import type { Outcome } from '@/config/progression';
-import { outcomeOf, reasonLabel, sideOf } from '@/game/review';
+import { modeLabel, outcomeOf, reasonLabel, sideOf } from '@/game/review';
 import { exportGamePgn } from '@/store/dataActions';
 import { useActiveProfile } from '@/store/profileStore';
 import { cx, formatDateTime } from '@/utils/format';
 
-type Filter = 'all' | 'mine' | 'pvai' | 'pvp';
+type Filter = 'all' | 'mine' | 'pvai' | 'pvp' | 'online';
 
 const OUTCOME: Record<Outcome, { label: string; className: string }> = {
   win: { label: 'Win', className: 'bg-success/15 text-success' },
@@ -54,7 +54,7 @@ function HistoryRow({ game, profileId }: { game: GameRecord; profileId: string |
         </div>
         <div className="mt-0.5 text-xs text-muted">
           {game.result} {reasonLabel(game.reason)} · {game.moves} moves ·{' '}
-          {game.mode === 'pvai' ? 'vs computer' : 'local'} · {formatDateTime(game.date)}
+          {modeLabel(game.mode).toLowerCase()} · {formatDateTime(game.date)}
         </div>
       </div>
       {xp !== undefined && (
@@ -152,12 +152,13 @@ export function HistoryScreen() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Tabs<Filter>
               label="Filter games"
-              className="w-full max-w-md"
+              className="w-full max-w-lg"
               items={[
                 { id: 'all', label: 'All' },
                 { id: 'mine', label: profile ? profile.name : 'Mine', disabled: !profile },
                 { id: 'pvai', label: 'vs AI' },
                 { id: 'pvp', label: 'Local' },
+                { id: 'online', label: 'Online' },
               ]}
               value={filter}
               onChange={setFilter}

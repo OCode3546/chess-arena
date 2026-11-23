@@ -1,11 +1,14 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useWindowState } from '@/app/useWindowState';
 import { playSound } from '@/audio/sfx';
 import { BoardSwatch, LockIcon, PieceSetPreview } from '@/components/Cosmetics';
 import { ScreenShell } from '@/components/ScreenShell';
 import { Button, Card, CardTitle, Modal, Tabs, Toggle } from '@/components/ui';
 import { ACCENTS, type Accent, type ThemeMode } from '@shared/types';
+import { DISPLAY_NAME_MAX } from '@shared/validate';
+import { inputClass } from '@/components/fields';
 import { BOARD_THEMES } from '@/config/boards';
+import { useOnline } from '@/net/onlineStore';
 import { PIECE_SETS } from '@/config/pieces';
 import { unlockLevel, type RewardKind } from '@/config/rewards';
 import { exportData, importData, resetProgress } from '@/store/dataActions';
@@ -217,6 +220,64 @@ function UpdateRow() {
     <SettingRow label="Check for updates" description={description}>
       {action}
     </SettingRow>
+  );
+}
+
+function OnlineSettings() {
+  const { settings, update } = useSettings();
+  const profile = useActiveProfile();
+  const identity = useOnline((s) => s.identity);
+  const inputId = useId();
+  const saved = identity?.displayName ?? '';
+  // Edited text; null = show the stored name.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!identity) void useOnline.getState().init();
+  }, [identity]);
+
+  const commit = () => {
+    if (draft !== null && draft.trim() !== saved) {
+      void useOnline
+        .getState()
+        .setDisplayName(draft)
+        .finally(() => setDraft(null));
+    } else {
+      setDraft(null);
+    }
+  };
+
+  return (
+    <Card className="flex flex-col">
+      <CardTitle className="mb-2">Online</CardTitle>
+      <div className="flex flex-col gap-1 py-2">
+        <label htmlFor={inputId} className="text-sm font-medium text-fg">
+          Display name
+        </label>
+        <input
+          id={inputId}
+          className={inputClass}
+          value={draft ?? saved}
+          maxLength={DISPLAY_NAME_MAX}
+          placeholder={profile?.name ?? 'Player'}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          data-display-name
+        />
+        <span className="text-xs text-muted">
+          What opponents see. Leave empty to use your profile name.
+        </span>
+      </div>
+      <Toggle
+        label="Rematch offers"
+        description="Show opponents' rematch offers (off declines them automatically)"
+        checked={settings.rematchOffers}
+        onChange={(rematchOffers) => update({ rematchOffers })}
+      />
+    </Card>
   );
 }
 
@@ -437,6 +498,7 @@ export function SettingsScreen() {
             />
           </Card>
           <SoundSettings />
+          <OnlineSettings />
         </div>
 
         <AppSettings />

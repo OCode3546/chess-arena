@@ -30,10 +30,13 @@ import { createBackup, readBackup } from './backup';
 import { NativeEngine, type NativeEngineStatus } from './engine';
 import {
   addGameRecord,
+  clearOnlineRejoin,
   clearSavedGame,
   getBackupData,
   getGameRecord,
   getHistory,
+  getOnlineIdentity,
+  getOnlineRejoin,
   getProfiles,
   getSavedGame,
   getSettings,
@@ -41,6 +44,8 @@ import {
   initStorage,
   replaceAllData,
   resetProgress,
+  setOnlineDisplayName,
+  setOnlineRejoin,
   setProfiles,
   setSavedGame,
   setSettings,
@@ -270,7 +275,10 @@ function hardenWebContents(win: BrowserWindow): void {
     }
   });
   wc.on('will-attach-webview', (event) => event.preventDefault());
-  wc.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  // Only writing to the clipboard (the online invite code's Copy button) is allowed.
+  wc.session.setPermissionRequestHandler((_wc, permission, callback) =>
+    callback(permission === 'clipboard-sanitized-write'),
+  );
   if (!isDev) {
     wc.on('devtools-opened', () => wc.closeDevTools());
   }
@@ -408,6 +416,12 @@ function registerIpc(): void {
     return engine.search(req);
   });
   on(IPC.engineStop, () => engine?.stop());
+
+  handle(IPC.onlineIdentityGet, () => getOnlineIdentity());
+  handle(IPC.onlineDisplayNameSet, (name: unknown) => setOnlineDisplayName(name));
+  handle(IPC.onlineRejoinGet, () => getOnlineRejoin());
+  handle(IPC.onlineRejoinSet, (rejoin: unknown) => setOnlineRejoin(rejoin));
+  handle(IPC.onlineRejoinClear, () => clearOnlineRejoin());
 
   handle(IPC.updaterGetInfo, () => updater.info);
   on(IPC.updaterCheck, () => updater.check());

@@ -53,3 +53,15 @@ export const PVP_RULES = {
   higherWinnerFactor: 0.5,
   lowerWinnerFactor: 1.5,
 };
+
+/** vs an online player (spec §5.3). */
+export const ONLINE_XP: Record<Outcome, number> = { win: 80, draw: 35, loss: 12 };
+
+export const ONLINE_RULES = {
+  /** An online game must reach this move to award XP (and to count an abandonment win). */
+  minMoves: 10,
+  /** Games already played today vs the same opponent: from `halfAfter` on XP halves, from `zeroAfter` on it stops. */
+  halfAfter: 3,
+  zeroAfter: 6,
+  firstWinOfDay: 50,
+};

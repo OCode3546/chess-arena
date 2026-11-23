@@ -4,7 +4,13 @@ import type { GameRecord, Profile, ProfilesDoc } from '@shared/types';
 import { MAX_PROFILES } from '@shared/validate';
 import { cosmeticsFor, isUnlocked, type Cosmetics, type RewardKind } from '@/config/rewards';
 import { levelForXp } from '@/progression/levels';
-import { newProfile, settleMatch, type PlayerAward } from '@/progression/match';
+import {
+  newProfile,
+  settleMatch,
+  settleOnlineMatch,
+  type FinishedOnlineGame,
+  type PlayerAward,
+} from '@/progression/match';
 import { currentPgn, useGameStore } from './gameStore';
 
 export interface ProfilePersistence {
@@ -19,7 +25,7 @@ export function setProfilePersistence(p: ProfilePersistence | null): void {
 }
 
 export interface LastMatch {
-  /** `startedAt` of the game these awards belong to. */
+  /** `startedAt` of the local game (or the server id of the online game) these awards belong to. */
   gameId: string;
   awards: PlayerAward[];
 }
@@ -44,7 +50,12 @@ interface ProfileState {
   equip(kind: RewardKind, id: string, on?: boolean): boolean;
   /** Award XP and record the live game once it has ended. Idempotent per game. */
   settleFinishedGame(now?: Date): void;
+  /** Award XP and record an online game from the server's result. Idempotent per game. */
+  settleOnlineGame(game: FinishedOnlineGame, now?: Date): void;
 }
+
+/** Online games already settled in this session (a result can arrive again after a rejoin). */
+const settledOnline = new Set<string>();
 
 export const useProfiles = create<ProfileState>()((set, get) => {
   const commit = (patch: Partial<Pick<ProfileState, 'profiles' | 'activeId'>>) => {
@@ -120,6 +131,7 @@ export const useProfiles = create<ProfileState>()((set, get) => {
     settleFinishedGame(now = new Date()) {
       const game = useGameStore.getState();
       if (game.status !== 'over' || !game.result || !game.settings) return;
+      if (game.settings.mode === 'online') return;
       if (get().lastMatch?.gameId === game.startedAt) return;
       const settlement = settleMatch(
         get().profiles,
@@ -133,6 +145,16 @@ export const useProfiles = create<ProfileState>()((set, get) => {
         now,
       );
       set({ lastMatch: { gameId: game.startedAt, awards: settlement.awards } });
+      if (settlement.awards.length > 0) commit({ profiles: settlement.profiles });
+      persistence?.addRecord(settlement.record);
+    },
+
+    settleOnlineGame(game, now = new Date()) {
+      if (settledOnline.has(game.gameId)) return;
+      settledOnline.add(game.gameId);
+      const settlement = settleOnlineMatch(get().profiles, game, now);
+      set({ lastMatch: { gameId: game.gameId, awards: settlement?.awards ?? [] } });
+      if (!settlement) return;
       if (settlement.awards.length > 0) commit({ profiles: settlement.profiles });
       persistence?.addRecord(settlement.record);
     },

@@ -5,15 +5,17 @@ import {
   type Difficulty,
   type GameRecord,
   type GameSettings,
+  type PlayerInfo,
   type Profile,
   type ProfileStats,
+  type ResultCode,
 } from '@shared/types';
 import type { AchievementId } from '@/config/achievements';
-import { PVP_RULES, type Outcome } from '@/config/progression';
+import { ONLINE_RULES, PVP_RULES, type Outcome } from '@/config/progression';
 import { unlocksBetween, type Reward } from '@/config/rewards';
 import { other, type GameResult } from '@/game/rules';
 import { newAchievements } from './achievements';
-import { aiAward, isAbandoned, pvpAward, type XpAward } from './awards';
+import { aiAward, isAbandoned, onlineAward, pvpAward, type XpAward } from './awards';
 import { applyXp, type XpState } from './levels';
 
 export const GUEST = 'guest';
@@ -33,6 +35,7 @@ export function emptyStats(): ProfileStats {
     streak: 0,
     bestStreak: 0,
     winsByDifficulty: { beginner: 0, easy: 0, medium: 0, hard: 0, expert: 0, grandmaster: 0 },
+    online: { played: 0, wins: 0, draws: 0, losses: 0 },
   };
 }
 
@@ -46,6 +49,7 @@ export function newProfile(name: string, avatarId: string, now = new Date()): Pr
     createdAt: now.toISOString(),
     stats: emptyStats(),
     pvpToday: {},
+    onlineToday: {},
     equipped: { ...DEFAULT_EQUIPPED, effects: [] },
     achievements: {},
   };
@@ -81,6 +85,45 @@ export interface Settlement {
 
 const outcomeFor = (result: GameResult, color: Color): Outcome =>
   result.winner === null ? 'draw' : result.winner === color ? 'win' : 'loss';
+
+/** Apply an award to a profile: XP, level, the given stats and any achievements earned. */
+function creditProfile(
+  p: Profile,
+  color: Color,
+  award: XpAward,
+  stats: ProfileStats,
+  ctx: { outcome: Outcome; moves: number; abandoned: boolean; now: Date },
+  extra: Partial<Profile> = {},
+): { profile: Profile; award: PlayerAward } {
+  const before = { level: p.level, xp: p.xp };
+  const { levelsGained, ...after } = applyXp(before, award.total);
+  const earned = newAchievements(p.achievements, {
+    stats,
+    outcome: ctx.outcome,
+    moves: ctx.moves,
+    abandoned: ctx.abandoned,
+  });
+  const achievements = { ...p.achievements };
+  for (const id of earned) achievements[id] = ctx.now.toISOString();
+  return {
+    profile: { ...p, ...after, stats, achievements, ...extra },
+    award: {
+      profileId: p.id,
+      color,
+      name: p.name,
+      award,
+      before,
+      after,
+      levelsGained,
+      unlocks: unlocksBetween(before.level, after.level),
+      achievements: earned,
+    },
+  };
+}
+
+/** Keep only today's entries of a per-opponent daily counter. */
+const todayOnly = (counts: Profile['pvpToday'], day: string) =>
+  Object.fromEntries(Object.entries(counts).filter(([, e]) => e.date === day));
 
 function withResult(
   stats: ProfileStats,
@@ -131,30 +174,12 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
     award: XpAward,
     stats: ProfileStats,
     outcome: Outcome,
-    extra = {},
+    extra: Partial<Profile> = {},
   ) => {
-    const before = { level: p.level, xp: p.xp };
-    const { levelsGained, ...after } = applyXp(before, award.total);
-    const earned = newAchievements(p.achievements, {
-      stats,
-      outcome,
-      moves,
-      abandoned: isAbandoned(result.reason, moves),
-    });
-    const achievements = { ...p.achievements };
-    for (const id of earned) achievements[id] = now.toISOString();
-    updated.set(p.id, { ...p, ...after, stats, achievements, ...extra });
-    awards.push({
-      profileId: p.id,
-      color,
-      name: p.name,
-      award,
-      before,
-      after,
-      levelsGained,
-      unlocks: unlocksBetween(before.level, after.level),
-      achievements: earned,
-    });
+    const abandoned = isAbandoned(result.reason, moves);
+    const c = creditProfile(p, color, award, stats, { outcome, moves, abandoned, now }, extra);
+    updated.set(p.id, c.profile);
+    awards.push(c.award);
   };
 
   if (settings.mode === 'pvai' && settings.humanColor && settings.difficulty) {
@@ -213,9 +238,7 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
         continue;
       }
       // Only today's counters are kept.
-      const pvpToday = Object.fromEntries(
-        Object.entries(p.pvpToday).filter(([, e]) => e.date === day),
-      );
+      const pvpToday = todayOnly(p.pvpToday, day);
       if (moves >= PVP_RULES.minMoves) pvpToday[key] = { date: day, count: before + 1 };
       const stats = withResult(p.stats, outcome, {
         mateIn: result.reason === 'checkmate' ? moves : undefined,
@@ -240,7 +263,8 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
     whiteName: settings.players.w.name,
     blackName: settings.players.b.name,
     pgn: game.pgn,
-    result: result.result,
+    // Local games always end with a result.
+    result: result.result as ResultCode,
     reason: result.reason,
     moves,
     xpAwarded: Object.fromEntries(awards.map((a) => [a.profileId, a.award.total])),
@@ -248,6 +272,102 @@ export function settleMatch(profiles: Profile[], game: FinishedGame, now = new D
 
   return {
     profiles: profiles.map((p) => updated.get(p.id) ?? p),
+    record,
+    awards,
+  };
+}
+
+export interface FinishedOnlineGame {
+  gameId: string;
+  /** Local profile that played (the active one when the game started), if any. */
+  profileId: string | null;
+  color: Color;
+  players: { w: PlayerInfo; b: PlayerInfo };
+  /** The opponent's public id from the server (anti-farming key). */
+  opponentId: string;
+  /** The server's final result. */
+  result: GameResult;
+  plies: number;
+  pgn: string;
+}
+
+/**
+ * Settle an online game from the server's result (spec §5.3). Aborted games (no result)
+ * are not recorded. A win by abandonment before move 10 is recorded but not counted.
+ * Pure — the caller persists. Null when there is nothing to record.
+ */
+export function settleOnlineMatch(
+  profiles: Profile[],
+  game: FinishedOnlineGame,
+  now = new Date(),
+): Settlement | null {
+  const { result, color } = game;
+  if (result.result === '*') return null;
+  const moves = Math.ceil(game.plies / 2);
+  const day = localDay(now);
+  const p = game.profileId ? profiles.find((x) => x.id === game.profileId) : undefined;
+  const awards: PlayerAward[] = [];
+  let updated: Profile | null = null;
+
+  const counts = !(result.reason === 'abandonment' && moves < ONLINE_RULES.minMoves);
+  if (p && counts) {
+    const outcome = outcomeFor(result, color);
+    const entry = p.onlineToday[game.opponentId];
+    const before = entry?.date === day ? entry.count : 0;
+    const award = onlineAward({
+      outcome,
+      reason: result.reason,
+      moves,
+      priorStreak: p.stats.streak,
+      firstWinToday: p.stats.online.lastWinDate !== day,
+      gamesTodayBefore: before,
+    });
+    const stats = withResult(p.stats, outcome, {
+      mateIn: result.reason === 'checkmate' ? moves : undefined,
+    });
+    const o = p.stats.online;
+    stats.online = {
+      ...o,
+      played: o.played + 1,
+      wins: o.wins + (outcome === 'win' ? 1 : 0),
+      draws: o.draws + (outcome === 'draw' ? 1 : 0),
+      losses: o.losses + (outcome === 'loss' ? 1 : 0),
+      ...(outcome === 'win' && { lastWinDate: day }),
+    };
+    const onlineToday = todayOnly(p.onlineToday, day);
+    if (moves >= ONLINE_RULES.minMoves) {
+      onlineToday[game.opponentId] = { date: day, count: before + 1 };
+    }
+    const c = creditProfile(
+      p,
+      color,
+      award,
+      stats,
+      { outcome, moves, abandoned: moves < ONLINE_RULES.minMoves, now },
+      { onlineToday },
+    );
+    updated = c.profile;
+    awards.push(c.award);
+  }
+
+  const ref = (side: Color) => (side === color ? (p ? p.id : GUEST) : `online:${game.opponentId}`);
+  const record: GameRecord = {
+    id: crypto.randomUUID(),
+    date: now.toISOString(),
+    mode: 'online',
+    white: ref('w'),
+    black: ref('b'),
+    whiteName: game.players.w.name.slice(0, 40),
+    blackName: game.players.b.name.slice(0, 40),
+    pgn: game.pgn,
+    result: result.result,
+    reason: result.reason,
+    moves,
+    xpAwarded: Object.fromEntries(awards.map((a) => [a.profileId, a.award.total])),
+    onlineGameId: game.gameId,
+  };
+  return {
+    profiles: profiles.map((x) => (updated && x.id === updated.id ? updated : x)),
     record,
     awards,
   };

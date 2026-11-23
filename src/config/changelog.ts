@@ -1,6 +1,14 @@
 /** Release notes shown in About, newest first. */
 export const CHANGELOG: { version: string; notes: string[] }[] = [
   {
+    version: '0.9.0',
+    notes: [
+      'Play online: quick match or a private game with an invite code — no account needed',
+      'Server-checked moves and clocks, automatic reconnect, and rejoin after quitting',
+      'Online XP, online stats on the profile and online games in History',
+    ],
+  },
+  {
     version: '0.8.0',
     notes: [
       'Downloadable installers for Windows and macOS (Apple Silicon and Intel)',

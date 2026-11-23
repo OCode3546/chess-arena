@@ -19,6 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The online-play tests start the real game server.
+      - run: npm ci --prefix server
       - run: npm run lint
       - run: npm run typecheck
       - name: Fetch Stockfish (for the native-engine tests)

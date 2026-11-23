@@ -8,6 +8,7 @@ export interface StorageMigrations {
   savegame: Record<number, Migration>;
   profiles: Record<number, Migration>;
   history: Record<number, Migration>;
+  online: Record<number, Migration>;
 }
 
 type Doc = Record<string, unknown>;
@@ -46,5 +47,7 @@ export function storageMigrations(): StorageMigrations {
     history: {
       1: (d) => ({ ...d, games: Array.isArray(d.games) ? d.games.filter(isGameRecord) : [] }),
     },
+    // Added in 0.9.0 (online play); nothing to upgrade yet.
+    online: {},
   };
 }

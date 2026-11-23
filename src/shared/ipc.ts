@@ -35,4 +35,9 @@ export const IPC = {
   engineStart: 'engine:start',
   engineBestMove: 'engine:bestmove',
   engineStop: 'engine:stop',
+  onlineIdentityGet: 'online:identity-get',
+  onlineDisplayNameSet: 'online:display-name-set',
+  onlineRejoinGet: 'online:rejoin-get',
+  onlineRejoinSet: 'online:rejoin-set',
+  onlineRejoinClear: 'online:rejoin-clear',
 } as const;

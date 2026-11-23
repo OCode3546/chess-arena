@@ -23,6 +23,8 @@ export interface Settings {
   colorBlindHighlights: boolean;
   autoUpdate: boolean;
   launchAtStartup: boolean;
+  /** Online: show opponents' rematch offers (off = decline them automatically). */
+  rematchOffers: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   colorBlindHighlights: false,
   autoUpdate: true,
   launchAtStartup: false,
+  rematchOffers: true,
 };
 
 export interface TimeControl {
@@ -50,6 +53,19 @@ export interface PlayerInfo {
   name: string;
   /** Local profile playing this side; absent for guests and the computer. */
   profileId?: string;
+  /** Online opponent: level and avatar as reported by the server. */
+  level?: number;
+  avatarId?: string;
+}
+
+/** Results of online games, kept apart from local ones. */
+export interface OnlineStats {
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  /** Local date (YYYY-MM-DD) of the last online win (first-online-win-of-the-day bonus). */
+  lastWinDate?: string;
 }
 
 export interface ProfileStats {
@@ -65,6 +81,7 @@ export interface ProfileStats {
   winsByDifficulty: Record<Difficulty, number>;
   /** Fewest moves in a checkmate win. */
   fastestMate?: number;
+  online: OnlineStats;
 }
 
 /** Cosmetics a profile has chosen. Unlocks are derived from the level, never stored. */
@@ -95,6 +112,8 @@ export interface Profile {
   stats: ProfileStats;
   /** Local games played today per opponent (profile id or 'guest'), for diminishing returns. */
   pvpToday: Record<string, { date: string; count: number }>;
+  /** Online games played today per opponent (server-reported player id), for diminishing returns. */
+  onlineToday: Record<string, { date: string; count: number }>;
   equipped: Equipped;
   /** Achievement id → ISO time it was earned. */
   achievements: Record<string, string>;
@@ -111,8 +130,8 @@ export interface GameRecord {
   id: string;
   /** ISO time the game ended. */
   date: string;
-  mode: 'pvai' | 'pvp';
-  /** Profile id, 'guest' or 'ai:<difficulty>'. */
+  mode: 'pvai' | 'pvp' | 'online';
+  /** Profile id, 'guest', 'ai:<difficulty>' or 'online:<opponent id>'. */
   white: string;
   black: string;
   whiteName: string;
@@ -124,10 +143,20 @@ export interface GameRecord {
   moves: number;
   /** XP per profile id. */
   xpAwarded: Record<string, number>;
+  /** Server game id of an online game. */
+  onlineGameId?: string;
+}
+
+/** The local player's seat in an online game. */
+export interface OnlineSeat {
+  gameId: string;
+  color: Color;
+  /** The opponent's stable public id (anti-farming key); never their guest id. */
+  opponentId: string;
 }
 
 export interface GameSettings {
-  mode: 'pvp' | 'pvai';
+  mode: 'pvp' | 'pvai' | 'online';
   timeControl: TimeControl;
   players: { w: PlayerInfo; b: PlayerInfo };
   autoFlip: boolean;
@@ -137,6 +166,8 @@ export interface GameSettings {
   humanColor?: Color;
   /** vs AI only: hints and takebacks allowed (each costs XP). */
   assists?: boolean;
+  /** Online only. Online games are never saved locally. */
+  online?: OnlineSeat;
 }
 
 /** Hints and takebacks used in a vs-AI game (drives the XP penalty). */
@@ -156,6 +187,22 @@ export interface SavedGame {
   clockStarted: boolean;
   /** Absent in saves from before vs-AI support. */
   assists?: AssistsUsed;
+}
+
+/** Per-install identity for online play (stored in userData). */
+export interface OnlineIdentity {
+  /** Random uuid sent to the server; never shown to other players. */
+  guestId: string;
+  /** Name opponents see; empty = the active profile's name. */
+  displayName: string;
+}
+
+/** Enough to take a seat again in a live online game after a crash or relaunch. */
+export interface OnlineRejoin {
+  gameId: string;
+  token: string;
+  /** ISO time it was saved. */
+  savedAt: string;
 }
 
 export type EngineBackend = 'native' | 'wasm' | 'minimax';
@@ -275,6 +322,16 @@ export interface ChessArenaApi {
     bestMove(req: SearchRequest): Promise<SearchResult>;
     /** Finish the current search early (its result is still delivered). */
     stop(): void;
+  };
+  online: {
+    /** Game server WebSocket URL, fixed at build time. */
+    serverUrl: string;
+    getIdentity(): Promise<OnlineIdentity>;
+    /** Returns the identity as stored (the name is trimmed and length-limited). */
+    setDisplayName(name: string): Promise<OnlineIdentity>;
+    getRejoin(): Promise<OnlineRejoin | null>;
+    setRejoin(rejoin: OnlineRejoin): Promise<boolean>;
+    clearRejoin(): Promise<void>;
   };
   updater: {
     getInfo(): Promise<UpdaterInfo>;

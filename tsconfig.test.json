@@ -1,7 +1,12 @@
 {
   "extends": "./tsconfig.web.json",
   "compilerOptions": {
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@game/*": ["./src/game/*"]
+    }
   },
   "include": [
     "./src/**/*.ts",

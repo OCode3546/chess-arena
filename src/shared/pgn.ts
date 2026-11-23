@@ -5,6 +5,13 @@ import type { GameRecord } from './types';
 const TERMINATION: Record<string, string> = {
   timeout: 'Time forfeit',
   'timeout-insufficient': 'Time forfeit',
+  abandonment: 'Abandoned',
+};
+
+const EVENT: Record<GameRecord['mode'], string> = {
+  pvp: 'Chess Arena local game',
+  pvai: 'Chess Arena game vs computer',
+  online: 'Chess Arena online game',
 };
 
 /**
@@ -20,10 +27,7 @@ export function exportPgn(record: GameRecord): string | null {
     return null;
   }
   const date = chess.getHeaders()['Date'];
-  chess.setHeader(
-    'Event',
-    record.mode === 'pvp' ? 'Chess Arena local game' : 'Chess Arena game vs computer',
-  );
+  chess.setHeader('Event', EVENT[record.mode]);
   chess.setHeader('Site', 'Chess Arena');
   if (!date || date.includes('?'))
     chess.setHeader('Date', record.date.slice(0, 10).replace(/-/g, '.'));

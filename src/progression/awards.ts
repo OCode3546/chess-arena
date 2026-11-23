@@ -6,6 +6,8 @@ import {
   AI_XP,
   ASSIST_FLOOR_PCT,
   ASSIST_PENALTY_PCT,
+  ONLINE_RULES,
+  ONLINE_XP,
   PVP_RULES,
   PVP_XP,
   type Outcome,
@@ -163,6 +165,69 @@ export function pvpAward(i: PvpAwardInput): XpAward {
     const next = Math.round(amount / 2);
     lines.push({ label: 'Many games with this opponent today ×0.5', amount: next - amount });
     note = `After ${PVP_RULES.halfAfter} games a day with the same opponent, XP is halved.`;
+  }
+  return finish(lines, note);
+}
+
+export interface OnlineAwardInput {
+  outcome: Outcome;
+  reason: EndReason;
+  moves: number;
+  /** Consecutive wins before this game (shared with the vs-AI streak). */
+  priorStreak: number;
+  /** No online win yet today. */
+  firstWinToday: boolean;
+  /** Games vs this opponent already finished today (before this one). */
+  gamesTodayBefore: number;
+}
+
+/** XP for an online game, from the server's final result (spec §5.3). */
+export function onlineAward(i: OnlineAwardInput): XpAward {
+  if (i.moves < ONLINE_RULES.minMoves) {
+    return none(`Online games award XP once they reach move ${ONLINE_RULES.minMoves}.`);
+  }
+  const base = ONLINE_XP[i.outcome];
+  const lines: XpLine[] = [
+    { label: `Online ${OUTCOME_LABEL[i.outcome].toLowerCase()}`, amount: base },
+  ];
+  if (i.outcome === 'win') {
+    if (i.reason === 'checkmate') {
+      lines.push({
+        label: `Checkmate finish +${AI_BONUS.checkmatePct}%`,
+        amount: pct(base, AI_BONUS.checkmatePct),
+      });
+    }
+    if (i.moves < AI_BONUS.shortWinMoves) {
+      lines.push({
+        label: `Won in under ${AI_BONUS.shortWinMoves} moves +${AI_BONUS.shortWinPct}%`,
+        amount: pct(base, AI_BONUS.shortWinPct),
+      });
+    }
+    const streakPct = Math.min(
+      AI_BONUS.streakPctCap,
+      Math.max(0, i.priorStreak) * AI_BONUS.streakPctPerWin,
+    );
+    if (streakPct > 0) {
+      lines.push({
+        label: `Win streak ×${i.priorStreak + 1} +${streakPct}%`,
+        amount: pct(base, streakPct),
+      });
+    }
+    if (i.firstWinToday) {
+      lines.push({ label: 'First online win of the day', amount: ONLINE_RULES.firstWinOfDay });
+    }
+  }
+  const subtotal = lines.reduce((sum, l) => sum + l.amount, 0);
+  let note: string | undefined;
+  if (i.gamesTodayBefore >= ONLINE_RULES.zeroAfter) {
+    lines.push({ label: 'Daily limit with this opponent', amount: -subtotal });
+    note = `After ${ONLINE_RULES.zeroAfter} games a day with the same opponent, XP stops until tomorrow.`;
+  } else if (i.gamesTodayBefore >= ONLINE_RULES.halfAfter) {
+    lines.push({
+      label: 'Many games with this opponent today ×0.5',
+      amount: Math.round(subtotal / 2) - subtotal,
+    });
+    note = `After ${ONLINE_RULES.halfAfter} games a day with the same opponent, XP is halved.`;
   }
   return finish(lines, note);
 }

@@ -6,7 +6,7 @@ import { playSound } from '@/audio/sfx';
 import { Button } from '@/components/ui';
 import { Board } from '@/game/Board';
 import { MoveListView } from '@/game/MoveList';
-import { clampPly, movesFromPgn, reasonLabel, sideOf } from '@/game/review';
+import { clampPly, modeLabel, movesFromPgn, reasonLabel, sideOf } from '@/game/review';
 import { other } from '@/game/rules';
 import { exportGamePgn } from '@/store/dataActions';
 import { useProfiles } from '@/store/profileStore';
@@ -140,8 +140,7 @@ export function ReviewScreen() {
             <div className="border-t border-line pt-2 text-xs text-muted" data-review-summary>
               {record.result} {reasonLabel(record.reason)} · {record.moves} moves
               <br />
-              {record.mode === 'pvai' ? 'vs computer' : 'Local game'} ·{' '}
-              {formatDateTime(record.date)}
+              {modeLabel(record.mode)} · {formatDateTime(record.date)}
               {xp !== undefined && (
                 <span className="font-semibold text-accent-text"> · +{xp} XP</span>
               )}

@@ -37,3 +37,13 @@ export function outcomeOf(record: GameRecord, side: Color): Outcome {
 export function reasonLabel(reason: string): string {
   return REASON_LABEL[reason as EndReason] ?? reason;
 }
+
+const MODE_LABEL: Record<GameRecord['mode'], string> = {
+  pvai: 'vs computer',
+  pvp: 'Local game',
+  online: 'Online game',
+};
+
+export function modeLabel(mode: GameRecord['mode']): string {
+  return MODE_LABEL[mode];
+}

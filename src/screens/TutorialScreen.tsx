@@ -12,6 +12,8 @@ import {
   ASSIST_FLOOR_PCT,
   ASSIST_PENALTY_PCT,
   MAX_LEVEL,
+  ONLINE_RULES,
+  ONLINE_XP,
   PVP_RULES,
   PVP_XP,
 } from '@/config/progression';
@@ -207,6 +209,24 @@ function XpGuide() {
         </ul>
         <p className="mt-3 text-xs text-muted">
           Games resigned, agreed drawn or lost on time before move {ABANDON_BEFORE_MOVE} give no XP.
+        </p>
+      </Card>
+      <Card>
+        <CardTitle>XP in online games</CardTitle>
+        <ul className="mt-2 divide-y divide-line">
+          <Row label="Win / draw / loss">
+            {ONLINE_XP.win} / {ONLINE_XP.draw} / {ONLINE_XP.loss} XP
+          </Row>
+          <Row label="Counts from">move {ONLINE_RULES.minMoves}</Row>
+          <Row label="Win bonuses">checkmate, short win and win streak, as vs the computer</Row>
+          <Row label="First online win of the day">+{ONLINE_RULES.firstWinOfDay} XP</Row>
+          <Row label="Same opponent, same day">
+            half XP after {ONLINE_RULES.halfAfter} games, none after {ONLINE_RULES.zeroAfter}
+          </Row>
+        </ul>
+        <p className="mt-3 text-xs text-muted">
+          The server decides every result. Aborted games give no XP; a win because your opponent
+          left counts only after move {ONLINE_RULES.minMoves}.
         </p>
       </Card>
       <Card className="flex flex-col">

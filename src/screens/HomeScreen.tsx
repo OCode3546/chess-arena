@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/app/TitleBar';
 import { LevelBadge, ProfileAvatar, TitleTag } from '@/components/Avatar';
@@ -7,6 +7,7 @@ import { cosmeticsFor } from '@/config/rewards';
 import { Button } from '@/components/ui';
 import { XpBar } from '@/components/XpBar';
 import { describeTimeControl } from '@/config/timeControls';
+import { useOnline } from '@/net/onlineStore';
 import { useActiveProfile, useProfiles } from '@/store/profileStore';
 import { useSession } from '@/store/sessionStore';
 import { installUpdate, openReleasesPage, useUpdates } from '@/store/updateStore';
@@ -171,10 +172,30 @@ export function HomeScreen() {
   const profileCount = useProfiles((s) => s.profiles.length);
   const savedGame = useSession((s) => s.savedGame);
   const continueSavedGame = useSession((s) => s.continueSavedGame);
+  const liveOnline = useOnline((s) => {
+    const g = s.game;
+    if (!g || g.over) return null;
+    return `${g.white.name} vs ${g.black.name}`;
+  });
+  const rejoin = useOnline((s) => (s.game ? null : s.rejoin));
+  const [rejoining, setRejoining] = useState(false);
 
   const onContinue = async () => {
     if (await continueSavedGame()) navigate('/game');
   };
+  const onReturnOnline = () => {
+    if (useOnline.getState().showGame()) navigate('/game');
+  };
+  const onRejoin = async () => {
+    setRejoining(true);
+    try {
+      // Navigates to the game once the server hands the seat back (see App).
+      await useOnline.getState().rejoinSaved();
+    } finally {
+      window.setTimeout(() => setRejoining(false), 4000);
+    }
+  };
+  const primaryTaken = !!(liveOnline || rejoin || savedGame);
 
   return (
     <section data-screen="home" className="h-full overflow-y-auto">
@@ -190,18 +211,46 @@ export function HomeScreen() {
             <Logo className="h-16 w-16 shadow-2xl" />
             <div>
               <h1 className="font-display text-5xl font-bold tracking-tight">Chess Arena</h1>
-              <p className="mt-1 text-muted">
-                Play a friend on this {COMPUTER} or challenge the computer.
-              </p>
+              <p className="mt-1 text-muted">Play a friend, the computer, or anyone online.</p>
             </div>
           </motion.div>
 
           <UpdateBanner />
 
           <motion.div variants={item} className="flex flex-col gap-3">
-            {savedGame && (
+            {liveOnline ? (
               <Button
                 variant="primary"
+                size="lg"
+                block
+                onClick={onReturnOnline}
+                className="justify-between"
+                data-return-online
+              >
+                <span>Return to online game</span>
+                <span className="text-sm font-medium opacity-85">{liveOnline}</span>
+              </Button>
+            ) : (
+              rejoin && (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  block
+                  onClick={() => void onRejoin()}
+                  disabled={rejoining}
+                  className="justify-between"
+                  data-rejoin-online
+                >
+                  <span>{rejoining ? 'Rejoining…' : 'Rejoin online game'}</span>
+                  <span className="text-sm font-medium opacity-85">
+                    Come back within 60 s of leaving
+                  </span>
+                </Button>
+              )
+            )}
+            {savedGame && !liveOnline && (
+              <Button
+                variant={liveOnline || rejoin ? 'secondary' : 'primary'}
                 size="lg"
                 block
                 onClick={onContinue}
@@ -215,7 +264,7 @@ export function HomeScreen() {
               </Button>
             )}
             <Button
-              variant={savedGame ? 'secondary' : 'primary'}
+              variant={primaryTaken ? 'secondary' : 'primary'}
               size="lg"
               block
               onClick={() => navigate('/setup?mode=pvai')}
@@ -232,6 +281,16 @@ export function HomeScreen() {
             >
               <span>Play vs Player</span>
               <span className="text-sm font-medium text-muted">Local · same {COMPUTER}</span>
+            </Button>
+            <Button
+              size="lg"
+              block
+              onClick={() => navigate('/online')}
+              className="justify-between"
+              data-play-online
+            >
+              <span>Play Online</span>
+              <span className="text-sm font-medium text-muted">Quick match or invite a friend</span>
             </Button>
           </motion.div>
 

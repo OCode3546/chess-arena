@@ -47,6 +47,27 @@ function StatsCard({ profile }: { profile: Profile }) {
         <Stat label="Fastest checkmate" value={s.fastestMate ? `${s.fastestMate} moves` : '—'} />
       </div>
       <div>
+        <div className="mb-2 text-xs font-semibold text-muted">Online</div>
+        <div className="grid grid-cols-4 gap-2" data-online-stats>
+          {(
+            [
+              ['Played', s.online.played],
+              ['Wins', s.online.wins],
+              ['Draws', s.online.draws],
+              ['Losses', s.online.losses],
+            ] as const
+          ).map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-xl border border-line bg-surface px-3 py-2 text-center"
+            >
+              <div className="truncate text-[11px] text-muted">{label}</div>
+              <div className="font-display text-lg font-bold tabular-nums">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
         <div className="mb-2 text-xs font-semibold text-muted">Wins vs the computer</div>
         <div className="grid grid-cols-6 gap-2">
           {DIFFICULTY_ORDER.map((d) => (

@@ -14,10 +14,15 @@ export type EndReason =
   | 'resignation'
   | 'agreement'
   | 'timeout'
-  | 'timeout-insufficient';
+  | 'timeout-insufficient'
+  // Online games only (decided by the server):
+  | 'abandonment'
+  | 'aborted'
+  | 'server-shutdown';
 
 export interface GameResult {
-  result: ResultCode;
+  /** `*` = no result (an aborted online game). */
+  result: ResultCode | '*';
   winner: Color | null;
   reason: EndReason;
 }
@@ -32,6 +37,9 @@ export const REASON_LABEL: Record<EndReason, string> = {
   agreement: 'by agreement',
   timeout: 'on time',
   'timeout-insufficient': 'timeout vs insufficient material',
+  abandonment: 'by abandonment',
+  aborted: '— game aborted',
+  'server-shutdown': '— the server restarted',
 };
 
 export const other = (c: Color): Color => (c === 'w' ? 'b' : 'w');

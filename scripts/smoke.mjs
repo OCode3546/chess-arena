@@ -575,7 +575,8 @@ try {
   check('no Buffer in renderer', first.bufferGlobal === 'undefined');
   check(
     'only the typed API is exposed',
-    JSON.stringify(first.apiKeys) === '["app","dialog","engine","storage","updater","window"]',
+    JSON.stringify(first.apiKeys) ===
+      '["app","dialog","engine","online","storage","updater","window"]',
     first.apiKeys,
   );
   for (const [route, ok] of Object.entries(first.routes))

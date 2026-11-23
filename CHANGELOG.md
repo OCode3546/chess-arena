@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+
+- Play online: quick match (3+2, 5+3, 10+0, 15+10) or a private game with a 6-character invite code. No account needed.
+- The game server decides every move, clock and result; draw offers, abort, resign and rematch offers.
+- Automatic reconnect with clock resync; a disconnected player has 60 s to return. Rejoin a live game after quitting from Home.
+- Online XP (80 / 35 / 12 with bonuses), online stats on the profile and online games in History.
+- Settings: the display name opponents see and whether to show rematch offers.
+
 ## 0.8.0
 
 - Downloadable installers for Windows (installer + portable exe) and macOS (Apple Silicon and Intel).

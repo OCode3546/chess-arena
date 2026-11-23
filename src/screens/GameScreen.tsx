@@ -5,8 +5,10 @@ import { Button, Modal, Tabs } from '@/components/ui';
 import { Board } from '@/game/Board';
 import { GameOverModal } from '@/game/GameOverModal';
 import { MoveList } from '@/game/MoveList';
+import { OnlineControls, OnlineRematchButton } from '@/game/OnlineControls';
 import { PlayerStrip } from '@/game/PlayerStrip';
 import { other, REASON_LABEL, type GameResult } from '@/game/rules';
+import { useOnline } from '@/net/onlineStore';
 import { aiColorOf, undoablePlies, useGameStore } from '@/store/gameStore';
 import { MOD_KEY } from '@/utils/platform';
 import { useMediaQuery } from '@/utils/useMediaQuery';
@@ -36,7 +38,14 @@ export function GameScreen() {
   const [tab, setTab] = useState<'game' | 'moves'>('game');
   const wide = useMediaQuery('(min-width: 1180px)');
   const playing = status === 'playing';
+  const online = settings?.mode === 'online';
+  const hasOnlineGame = useOnline((s) => !!s.game?.state);
   const showGameOver = status === 'over' && result !== null && result !== dismissedResult;
+
+  // Opened with no game on the board (e.g. Home → back to the online game): show it.
+  useEffect(() => {
+    if (status === 'idle' && hasOnlineGame) useOnline.getState().showGame();
+  }, [status, hasOnlineGame]);
   // Paused games (including restored timed games) always show the pause menu.
   const pauseOpen = playing && paused;
 
@@ -70,6 +79,7 @@ export function GameScreen() {
       } else if (e.key === 'f' || e.key === 'F') {
         if (!e.ctrlKey && !e.metaKey && !e.altKey) game().flip();
       } else if (e.key === 'Escape') {
+        if (online) return;
         if (!dialog && game().status === 'playing' && !game().pendingPromotion) openPause();
       }
     };
@@ -122,7 +132,9 @@ export function GameScreen() {
   const resigner = vsAi && settings.humanColor ? settings.humanColor : turn;
   const moverName = settings.players[turn].name;
 
-  const controls = (
+  const controls = online ? (
+    <OnlineControls onShowResult={() => setDismissedResult(null)} />
+  ) : (
     <div className="glass flex flex-col gap-2 rounded-2xl p-3">
       {playing ? (
         <>
@@ -321,7 +333,8 @@ export function GameScreen() {
         open={showGameOver}
         onReview={() => setDismissedResult(result)}
         onRematch={rematch}
-        onNewGame={() => navigate(`/setup?mode=${settings.mode}`)}
+        rematch={online ? <OnlineRematchButton autoFocus /> : undefined}
+        onNewGame={() => navigate(online ? '/online' : `/setup?mode=${settings.mode}`)}
         onHome={() => navigate('/')}
       />
     </section>

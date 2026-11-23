@@ -6,6 +6,9 @@ import {
   type Equipped,
   type GameRecord,
   type GameSettings,
+  type OnlineIdentity,
+  type OnlineRejoin,
+  type OnlineStats,
   type Profile,
   type ProfilesDoc,
   type ProfileStats,
@@ -52,6 +55,7 @@ export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTIN
     'colorBlindHighlights',
     'autoUpdate',
     'launchAtStartup',
+    'rematchOffers',
   ] as const) {
     const v = input[key];
     if (isBool(v)) out[key] = v;
@@ -133,6 +137,18 @@ const MAX_LEVEL = 50;
 const MAX_XP = 100_000_000;
 const count = (v: unknown): number => (isInt(v, 0, 1e9) ? v : 0);
 
+function sanitizeOnlineStats(v: unknown): OnlineStats {
+  const s = isObj(v) ? v : {};
+  const out: OnlineStats = {
+    played: count(s.played),
+    wins: count(s.wins),
+    draws: count(s.draws),
+    losses: count(s.losses),
+  };
+  if (isDay(s.lastWinDate)) out.lastWinDate = s.lastWinDate;
+  return out;
+}
+
 function sanitizeStats(v: unknown): ProfileStats {
   const s = isObj(v) ? v : {};
   const wbd = isObj(s.winsByDifficulty) ? s.winsByDifficulty : {};
@@ -147,6 +163,7 @@ function sanitizeStats(v: unknown): ProfileStats {
       Difficulty,
       number
     >,
+    online: sanitizeOnlineStats(s.online),
   };
   if (isDay(s.lastWinDate)) stats.lastWinDate = s.lastWinDate;
   if (isInt(s.fastestMate, 1, 10_000)) stats.fastestMate = s.fastestMate;
@@ -178,14 +195,16 @@ export function sanitizeProfile(v: unknown): Profile | null {
   if (!isObj(v) || !isId(v.id) || v.id === 'guest') return null;
   const name = isStr(v.name, 40) ? v.name.trim() : '';
   if (!name) return null;
-  const pvpToday: Profile['pvpToday'] = {};
-  if (isObj(v.pvpToday)) {
-    for (const [key, entry] of Object.entries(v.pvpToday).slice(0, 50)) {
-      if (isId(key) && isObj(entry) && isDay(entry.date) && isInt(entry.count, 0, 1e6)) {
-        pvpToday[key] = { date: entry.date, count: entry.count };
+  const dailyCounts = (raw: unknown, isKey: (k: string) => boolean) => {
+    const out: Profile['pvpToday'] = {};
+    if (!isObj(raw)) return out;
+    for (const [key, entry] of Object.entries(raw).slice(0, 50)) {
+      if (isKey(key) && isObj(entry) && isDay(entry.date) && isInt(entry.count, 0, 1e6)) {
+        out[key] = { date: entry.date, count: entry.count };
       }
     }
-  }
+    return out;
+  };
   return {
     id: v.id,
     name,
@@ -194,7 +213,8 @@ export function sanitizeProfile(v: unknown): Profile | null {
     xp: isInt(v.xp, 0, MAX_XP) ? v.xp : 0,
     createdAt: isIso(v.createdAt) ? v.createdAt : new Date(0).toISOString(),
     stats: sanitizeStats(v.stats),
-    pvpToday,
+    pvpToday: dailyCounts(v.pvpToday, isId),
+    onlineToday: dailyCounts(v.onlineToday, (k) => ONLINE_ID.test(k)),
     equipped: sanitizeEquipped(v.equipped),
     achievements: sanitizeAchievements(v.achievements),
   };
@@ -223,18 +243,54 @@ export function sanitizeProfilesDoc(v: unknown): ProfilesDoc {
   return { activeId, profiles };
 }
 
-const PLAYER_REF = /^(guest|ai:[a-z]{1,20}|[a-z0-9-]{1,40})$/;
+/** Ids the game server uses for games and players. */
+const ONLINE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const PLAYER_REF = /^(guest|ai:[a-z]{1,20}|online:[A-Za-z0-9_-]{1,64}|[a-z0-9-]{1,40})$/;
 
 export function isGameRecord(v: unknown): v is GameRecord {
   if (!isObj(v)) return false;
   if (!isId(v.id) || !isIso(v.date)) return false;
-  if (v.mode !== 'pvp' && v.mode !== 'pvai') return false;
-  if (!isStr(v.white, 60) || !PLAYER_REF.test(v.white)) return false;
-  if (!isStr(v.black, 60) || !PLAYER_REF.test(v.black)) return false;
+  if (v.mode !== 'pvp' && v.mode !== 'pvai' && v.mode !== 'online') return false;
+  if (!isStr(v.white, 80) || !PLAYER_REF.test(v.white)) return false;
+  if (!isStr(v.black, 80) || !PLAYER_REF.test(v.black)) return false;
+  if (
+    v.onlineGameId !== undefined &&
+    !(isStr(v.onlineGameId, 64) && ONLINE_ID.test(v.onlineGameId))
+  )
+    return false;
   if (!isStr(v.whiteName, 40) || !isStr(v.blackName, 40)) return false;
   if (!isStr(v.pgn, 50_000)) return false;
   if (v.result !== '1-0' && v.result !== '0-1' && v.result !== '1/2-1/2') return false;
   if (!isStr(v.reason, 40) || !isInt(v.moves, 0, 10_000)) return false;
   if (!isObj(v.xpAwarded)) return false;
   return Object.entries(v.xpAwarded).every(([k, xp]) => isId(k) && isInt(xp, 0, 1_000_000));
+}
+
+export const DISPLAY_NAME_MAX = 20;
+const GUEST_ID = /^[A-Za-z0-9-]{8,64}$/;
+
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+
+/** Trim a display name, strip control characters and cap its length. */
+export function cleanDisplayName(v: unknown): string {
+  if (typeof v !== 'string') return '';
+  return v.replace(CONTROL_CHARS, '').trim().slice(0, DISPLAY_NAME_MAX).trim();
+}
+
+/** A stored online identity, or null if it is unusable (a new one is then generated). */
+export function sanitizeOnlineIdentity(v: unknown): OnlineIdentity | null {
+  if (!isObj(v) || typeof v.guestId !== 'string' || !GUEST_ID.test(v.guestId)) return null;
+  return { guestId: v.guestId, displayName: cleanDisplayName(v.displayName) };
+}
+
+export function isOnlineRejoin(v: unknown): v is OnlineRejoin {
+  return (
+    isObj(v) &&
+    isStr(v.gameId, 64) &&
+    ONLINE_ID.test(v.gameId) &&
+    isStr(v.token, 64) &&
+    ONLINE_ID.test(v.token) &&
+    isIso(v.savedAt)
+  );
 }

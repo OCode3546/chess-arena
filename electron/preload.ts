@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '@shared/ipc';
 import type { ChessArenaApi, UpdaterInfo, WindowState } from '@shared/types';
 
+/** Game server address, injected at build time (electron.vite.config.ts). */
+declare const __SERVER_URL__: string;
+const SERVER_URL = __SERVER_URL__;
+
 function subscribe<T extends unknown[]>(channel: string, cb: (...args: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]) => cb(...(args as T));
   ipcRenderer.on(channel, listener);
@@ -49,6 +53,14 @@ const api: ChessArenaApi = {
     start: () => ipcRenderer.invoke(IPC.engineStart),
     bestMove: (req) => ipcRenderer.invoke(IPC.engineBestMove, req),
     stop: () => ipcRenderer.send(IPC.engineStop),
+  },
+  online: {
+    serverUrl: SERVER_URL,
+    getIdentity: () => ipcRenderer.invoke(IPC.onlineIdentityGet),
+    setDisplayName: (name) => ipcRenderer.invoke(IPC.onlineDisplayNameSet, name),
+    getRejoin: () => ipcRenderer.invoke(IPC.onlineRejoinGet),
+    setRejoin: (rejoin) => ipcRenderer.invoke(IPC.onlineRejoinSet, rejoin),
+    clearRejoin: () => ipcRenderer.invoke(IPC.onlineRejoinClear),
   },
   updater: {
     getInfo: () => ipcRenderer.invoke(IPC.updaterGetInfo),

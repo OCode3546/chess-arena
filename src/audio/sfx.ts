@@ -168,7 +168,10 @@ export function wireSounds(): () => void {
     const moved = !!last && s.history.length === prev.history.length + 1;
     if (moved) playSound(moveSound(last));
     if (s.status === 'over' && prev.status === 'playing' && s.result) {
-      const human = s.settings?.mode === 'pvai' ? (s.settings.humanColor ?? null) : null;
+      const human =
+        s.settings?.mode === 'pvai'
+          ? (s.settings.humanColor ?? null)
+          : (s.settings?.online?.color ?? null);
       playSound(endSound(s.result, human), moved ? 250 : 0);
     }
   });

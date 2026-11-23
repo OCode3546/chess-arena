@@ -6,9 +6,11 @@ import { cosmeticsFor } from '@/config/rewards';
 import { useAiUi } from '@/ai/useAiOpponent';
 import { Avatar, LevelBadge, TitleTag } from '@/components/Avatar';
 import { XpBar } from '@/components/XpBar';
+import { useOnline } from '@/net/onlineStore';
 import { aiColorOf, useGameStore } from '@/store/gameStore';
 import { useCosmetics, useProfile } from '@/store/profileStore';
 import { cx, formatClock } from '@/utils/format';
+import { useNow } from '@/utils/useNow';
 import { capturedPieces } from './pieceIds';
 import { other, PIECE_VALUE } from './rules';
 
@@ -41,8 +43,34 @@ function Clock({ color }: { color: Color }) {
   );
 }
 
+/** Online opponent away: seconds left before they lose by abandonment. */
+function AwayNotice({ color }: { color: Color }) {
+  const away = useOnline((s) => {
+    const g = s.game;
+    if (!g || g.over || g.color === color || g.opponent.connected) return null;
+    return g.opponent.graceEndsAt;
+  });
+  const shown = useGameStore((s) => s.settings?.online?.color !== undefined);
+  const now = useNow(away !== null, 250);
+  if (away === null || !shown) return null;
+  const left = Math.max(0, Math.ceil((away - now) / 1000));
+  return (
+    <div
+      role="status"
+      data-opponent-away
+      className="rounded-lg bg-warning/15 px-2.5 py-1.5 text-xs font-semibold text-fg"
+    >
+      Disconnected — {left > 0 ? `they lose in ${left}s unless they return` : 'time is up'}
+    </div>
+  );
+}
+
 export function PlayerStrip({ color, compact }: { color: Color; compact?: boolean }) {
   const name = useGameStore((s) => s.settings?.players[color].name ?? '');
+  const remoteLevel = useGameStore((s) => s.settings?.players[color].level);
+  const remoteAvatar = useGameStore((s) => s.settings?.players[color].avatarId ?? '');
+  const remote = remoteLevel !== undefined ? { level: remoteLevel, avatarId: remoteAvatar } : null;
+  const isOnline = useGameStore((s) => s.settings?.mode === 'online');
   const profile = useProfile(useGameStore((s) => s.settings?.players[color].profileId));
   const history = useGameStore((s) => s.history);
   const viewPly = useGameStore((s) => s.viewPly);
@@ -77,6 +105,8 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
       <div className="flex items-center gap-3">
         {look ? (
           <Avatar id={look.avatarId} frame={look.frame} size={44} className="rounded-xl" />
+        ) : remote ? (
+          <Avatar id={remote.avatarId} size={44} className="rounded-xl" />
         ) : (
           <div
             className={cx(
@@ -95,12 +125,17 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-semibold">{name}</span>
-            {profile && <LevelBadge level={profile.level} className="h-5 px-2 text-[11px]" />}
+            {profile ? (
+              <LevelBadge level={profile.level} className="h-5 px-2 text-[11px]" />
+            ) : (
+              remote && <LevelBadge level={remote.level} className="h-5 px-2 text-[11px]" />
+            )}
           </div>
           <TitleTag id={look?.title} className="block" />
           <div className="text-xs text-muted" aria-live={isAi ? 'polite' : undefined}>
             {color === 'w' ? 'White' : 'Black'}
             {isAi && ' · Computer'}
+            {isOnline && !profile && ' · Opponent'}
             {thinking ? (
               <span className="thinking ml-1 text-accent-soft">· thinking</span>
             ) : (
@@ -128,6 +163,7 @@ export function PlayerStrip({ color, compact }: { color: Color; compact?: boolea
           <span className="ml-1.5 text-xs font-semibold text-muted">+{advantage}</span>
         )}
       </div>
+      <AwayNotice color={color} />
       {compact && <Clock color={color} />}
     </div>
   );
